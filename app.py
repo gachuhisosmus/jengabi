@@ -4,6 +4,7 @@ import openai
 import os
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
@@ -13,7 +14,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)
 
-# ▼▼▼ ADDED ROOT ROUTE HERE ▼▼▼
+# Root route
 @app.route('/')
 def home():
     return jsonify({
@@ -23,7 +24,6 @@ def home():
             "webhook": "/webhook (POST)"
         }
     })
-# ▲▲▲ ADDED ROOT ROUTE HERE ▲▲▲
 
 # Initialize the Supabase client
 supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
@@ -63,7 +63,11 @@ def get_or_create_profile(phone_number):
         
         # If the user does NOT exist, create a new profile
         else:
-            new_profile = supabase.table('profiles').insert({"phone_number": phone_number}).execute()
+            new_profile = supabase.table('profiles').insert({
+                "phone_number": phone_number,
+                "message_count": 0,
+                "first_message_date": None
+            }).execute()
             print(f"New user created: {new_profile.data[0]}")
             return new_profile.data[0]
             
@@ -77,25 +81,38 @@ def generate_ai_ideas(business_type):
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
                 
-        # Craft a precise prompt for the AI
+        # ENHANCED PROMPT - MORE SPECIFIC AND ACTIONABLE
         prompt = f"""
-        Act as an expert marketing consultant for small businesses in Africa.
-        Generate 3 short, catchy, and effective WhatsApp Status ideas for a {business_type}.
-        The ideas must be under 100 characters each and designed to engage customers and drive sales.
-        Format the response as a numbered list.
+        Act as an expert marketing consultant specializing in African small businesses.
+        Generate 3 highly specific, actionable WhatsApp Status ideas for a {business_type} business.
+        
+        REQUIREMENTS:
+        - Each idea must be under 100 characters
+        - Include emojis relevant to African business culture
+        - Make it specific to {business_type} industry
+        - Focus on solving customer problems, not just features
+        - Include a clear call-to-action
+        - Use local language and context where appropriate
+        - Make it engaging and compelling
+        
+        FORMAT:
+        1. [Idea 1]  
+        2. [Idea 2]
+        3. [Idea 3]
         """
         
-        # Call the OpenAI API using the NEW syntax
+        # Call the OpenAI API
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a helpful marketing assistant and business analyst for small businesses."},
+                {"role": "system", "content": "You are a world-class marketing expert for African small businesses. Create compelling, actionable marketing ideas that drive real results."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=150,
+            max_tokens=250,  # Increased for better quality
+            temperature=0.8,  # More creative variations
         )
         
-        # Extract the AI's text using the NEW syntax
+        # Extract the AI's text
         ai_text = response.choices[0].message.content.strip()
         return ai_text
         
@@ -136,6 +153,17 @@ def increment_usage(profile_id):
     """Adds 1 to the user's message count."""
     print(f"SIMULATION: Incremented usage count for user {profile_id}")
 
+def get_remaining_ideas(profile_id):
+    """Get remaining ideas for current month - SIMPLIFIED VERSION"""
+    # This is a placeholder - you'll need to implement proper usage tracking
+    return 15  # Example value
+
+def schedule_reminder(phone_number, reminder_type):
+    """Schedule automated reminder - SIMPLIFIED VERSION"""
+    # Store in database for cron job (to be implemented)
+    print(f"Would schedule reminder for {phone_number} - {reminder_type}")
+    # Actual implementation would use database + cron job
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
 
@@ -153,6 +181,24 @@ def webhook():
     user_profile = get_or_create_profile(phone_number)
     if not user_profile:
         resp.message("Sorry, we're experiencing technical difficulties. Please try again later.")
+        return str(resp)
+    
+    # FREE FIRST EXPERIENCE - Check if first-time user
+    if user_profile.get('message_count', 0) == 0 and ('hello' in incoming_msg or 'start' in incoming_msg or 'hi' in incoming_msg):
+        # Generate ONE premium idea for free
+        business_type = "business"  # Default for first message
+        premium_idea = generate_ai_ideas(business_type)
+        resp.message(f"🎁 WELCOME BONUS!\n\n{premium_idea}\n\nLove this? Reply 'SUBSCRIBE' for daily strategies! 🚀")
+        
+        # Update message count and set first message date
+        supabase.table('profiles').update({
+            'message_count': 1,
+            'first_message_date': datetime.now().isoformat()
+        }).eq('id', user_profile['id']).execute()
+        
+        # Schedule reminder for next day
+        schedule_reminder(phone_number, "next_day_morning")
+        
         return str(resp)
     
     # Check if user is in plan selection state - THIS MUST COME FIRST
@@ -187,18 +233,37 @@ def webhook():
         return str(resp)
     
     # Process other commands
-    if 'hello' in incoming_msg:
+    if 'hello' in incoming_msg or 'hi' in incoming_msg or 'start' in incoming_msg:
         resp.message("Hello! Welcome to our business assistant. To start, please reply 'status' to check your subscription status or 'subscribe' to choose a subscription plan.")
     
     elif 'status' in incoming_msg:
         if check_subscription(user_profile['id']):
             plan_info = get_user_plan_info(user_profile['id'])
-            if plan_info:
-                resp.message(f"You have an active {plan_info.get('plan_type', 'unknown').capitalize()} subscription.")
-            else:
-                resp.message("You have an active subscription.")
+            plan_type = plan_info.get('plan_type', 'unknown')
+            
+            # Get usage statistics
+            remaining_ideas = get_remaining_ideas(user_profile['id'])
+            
+            status_message = f"""
+📊 YOUR SUBSCRIPTION STATUS:
+
+Plan: {plan_type.upper()} Package
+Price: KSh {PLANS[plan_type]['price']}/month
+Benefits: {PLANS[plan_type]['description']}
+
+📈 USAGE THIS MONTH:
+Remaining ideas: {remaining_ideas}/{
+    20 if plan_type == 'basic' else 
+    60 if plan_type == 'growth' else 
+    'Unlimited'
+}
+
+💡 NEXT: Reply 'ideas for my [business type]' to generate marketing content!
+            """
+            
+            resp.message(status_message)
         else:
-            resp.message("You do not have an active subscription. Reply 'subscribe' to choose your subscription plan and start building your business advertising ideas.")
+            resp.message("You don't have an active subscription. Reply 'subscribe' to choose a plan and start getting amazing marketing ideas! 🚀")
     
     elif 'subscribe' in incoming_msg:
         print(f"DEBUG: User {phone_number} requested subscription")
@@ -227,7 +292,20 @@ def webhook():
         # Check if user has subscription
         if check_subscription(user_profile['id']):
             ideas = generate_ai_ideas(business_type)
-            resp.message(ideas)
+            
+            # Split ideas into individual messages
+            idea_list = ideas.split('\n')
+            
+            # Send first idea immediately
+            first_idea = idea_list[0] if len(idea_list) > 0 else ideas
+            resp.message(f"🎯 HERE'S YOUR FIRST IDEA:\n\n{first_idea}")
+            
+            # Store remaining ideas for later delivery
+            if phone_number not in user_sessions:
+                user_sessions[phone_number] = {}
+            user_sessions[phone_number]['pending_ideas'] = idea_list[1:] if len(idea_list) > 1 else []
+            user_sessions[phone_number]['idea_delay'] = 0
+            
             increment_usage(user_profile['id'])
         else:
             resp.message("You need an active subscription to get ideas. Reply 'subscribe' to see our plans.")
