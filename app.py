@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from twilio.twiml.messaging_response import MessagingResponse
 import openai
 import os
@@ -12,6 +12,18 @@ load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)
+
+# ▼▼▼ ADDED ROOT ROUTE HERE ▼▼▼
+@app.route('/')
+def home():
+    return jsonify({
+        "message": "JengaBIBOT Server is running! 🚀", 
+        "status": "active",
+        "endpoints": {
+            "webhook": "/webhook (POST)"
+        }
+    })
+# ▲▲▲ ADDED ROOT ROUTE HERE ▲▲▲
 
 # Initialize the Supabase client
 supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
