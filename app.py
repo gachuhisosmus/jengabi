@@ -215,7 +215,7 @@ def webhook():
             selected_plan = 'pro'
         else:
             # If the user sent an invalid response, prompt again
-            resp.message("You didn't reply with any of the available options. Please reply with 'Basic', 'Growth', or 'Pro'.")
+            resp.message("You didn't reply with any of the available selections. Please reply with 'Basic', 'Growth', or 'Pro'.")
             return str(resp)
         
         # Clear the state now that we've processed the plan selection
