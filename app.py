@@ -59,37 +59,145 @@ def get_or_create_profile(phone_number):
         # If the user exists, return their data
         if len(response.data) > 0:
             print(f"User found: {response.data[0]}")
-            return response.data[0]
+            user_data = response.data[0]
+            
+            # Ensure all columns exist in the response with default values
+            default_values = {
+                'message_count': 0,
+                'first_message_date': None,
+                'business_name': None,
+                'business_type': None,
+                'business_location': None,
+                'business_phone': None,
+                'website': None,
+                'business_marketing_goals': None,
+                'profile_complete': False
+            }
+            
+            for field, default_value in default_values.items():
+                if field not in user_data:
+                    user_data[field] = default_value
+            
+            return user_data
         
         # If the user does NOT exist, create a new profile
         else:
             new_profile = supabase.table('profiles').insert({
                 "phone_number": phone_number,
                 "message_count": 0,
-                "first_message_date": None
+                "profile_complete": False
             }).execute()
             print(f"New user created: {new_profile.data[0]}")
-            return new_profile.data[0]
+            
+            # Add default values to the new profile
+            new_profile_data = new_profile.data[0].copy()
+            default_values = {
+                'first_message_date': None,
+                'business_name': None,
+                'business_type': None,
+                'business_location': None,
+                'business_phone': None,
+                'website': None,
+                'business_marketing_goals': None
+            }
+            new_profile_data.update(default_values)
+            
+            return new_profile_data
             
     except Exception as e:
         print(f"Database error in get_or_create_profile: {e}")
         return None
 
-def generate_ai_ideas(business_type):
+def start_business_onboarding(phone_number, user_profile):
+    """Start the business profile collection process"""
+    if phone_number not in user_sessions:
+        user_sessions[phone_number] = {}
+    
+    user_sessions[phone_number]['onboarding'] = True
+    user_sessions[phone_number]['onboarding_step'] = 0
+    user_sessions[phone_number]['business_data'] = {}
+    
+    return """
+🎯 LET'S PERSONALIZE YOUR EXPERIENCE!
+
+To give you the BEST marketing ideas, I need to know about your business.
+
+What's your business name?
+"""
+
+def handle_onboarding_response(phone_number, incoming_msg, user_profile):
+    """Handle business profile onboarding steps"""
+    step = user_sessions[phone_number].get('onboarding_step', 0)
+    business_data = user_sessions[phone_number].get('business_data', {})
+    
+    steps = [
+        {"question": "What's your business name?", "field": "business_name"},
+        {"question": "What type of business? (e.g., restaurant, salon, retail)", "field": "business_type"},
+        {"question": "Where are you located? (e.g., Nairobi, CBD)", "field": "business_location"},
+        {"question": "What's your business phone number?", "field": "business_phone"},
+        {"question": "What are your main marketing goals? (e.g., get more customers, increase sales, build brand)", "field": "business_marketing_goals"},
+        {"question": "Do you have a website or social media? (optional)", "field": "website"}
+    ]
+    
+    # Save current step response
+    if step > 0:
+        previous_field = steps[step-1]["field"]
+        business_data[previous_field] = incoming_msg
+    
+    # Check if onboarding complete
+    if step >= len(steps):
+        # Save all business data to database
+        try:
+            supabase.table('profiles').update({
+                **business_data,
+                'profile_complete': True
+            }).eq('id', user_profile['id']).execute()
+        except Exception as e:
+            print(f"Error saving business data: {e}")
+        
+        # Clear onboarding session
+        user_sessions[phone_number]['onboarding'] = False
+        user_sessions[phone_number]['onboarding_step'] = 0
+        
+        return True, """
+✅ PROFILE COMPLETE! 
+
+Now I can create personalized marketing ideas for your business!
+
+Reply 'ideas for my business' to get started or 'subscribe' to choose a plan.
+"""
+    
+    # Ask next question
+    user_sessions[phone_number]['onboarding_step'] = step + 1
+    user_sessions[phone_number]['business_data'] = business_data
+    
+    return False, steps[step]["question"]
+
+def generate_ai_ideas(user_profile):
     """This function calls the OpenAI API to generate marketing ideas."""
     try:
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        # Use business data for personalized prompts
+        business_context = ""
+        if user_profile.get('business_name'):
+            business_context = f"for {user_profile['business_name']}"
+        if user_profile.get('business_type'):
+            business_context += f", a {user_profile['business_type']}"
+        if user_profile.get('business_location'):
+            business_context += f" located in {user_profile['business_location']}"
+        if user_profile.get('business_marketing_goals'):
+            business_context += f" with goals to {user_profile['business_marketing_goals']}"
                 
-        # ENHANCED PROMPT - MORE SPECIFIC AND ACTIONABLE
         prompt = f"""
         Act as an expert marketing consultant specializing in African small businesses.
-        Generate 3 highly specific, actionable WhatsApp Status ideas for a {business_type} business.
+        Generate 3 highly specific, actionable WhatsApp Status ideas {business_context}.
         
         REQUIREMENTS:
         - Each idea must be under 100 characters
         - Include emojis relevant to African business culture
-        - Make it specific to {business_type} industry
+        - Make it specific to their industry, location, and marketing goals
         - Focus on solving customer problems, not just features
         - Include a clear call-to-action
         - Use local language and context where appropriate
@@ -108,8 +216,8 @@ def generate_ai_ideas(business_type):
                 {"role": "system", "content": "You are a world-class marketing expert for African small businesses. Create compelling, actionable marketing ideas that drive real results."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=250,  # Increased for better quality
-            temperature=0.8,  # More creative variations
+            max_tokens=250,
+            temperature=0.8,
         )
         
         # Extract the AI's text
@@ -155,18 +263,14 @@ def increment_usage(profile_id):
 
 def get_remaining_ideas(profile_id):
     """Get remaining ideas for current month - SIMPLIFIED VERSION"""
-    # This is a placeholder - you'll need to implement proper usage tracking
     return 15  # Example value
 
 def schedule_reminder(phone_number, reminder_type):
     """Schedule automated reminder - SIMPLIFIED VERSION"""
-    # Store in database for cron job (to be implemented)
     print(f"Would schedule reminder for {phone_number} - {reminder_type}")
-    # Actual implementation would use database + cron job
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-
     print(f"Raw request values: {dict(request.values)}")
     # Get the incoming message from WhatsApp
     incoming_msg = request.values.get('Body', '').lower()
@@ -183,25 +287,20 @@ def webhook():
         resp.message("Sorry, we're experiencing technical difficulties. Please try again later.")
         return str(resp)
     
-    # FREE FIRST EXPERIENCE - Check if first-time user
-    if user_profile.get('message_count', 0) == 0 and ('hello' in incoming_msg or 'start' in incoming_msg or 'hi' in incoming_msg):
-        # Generate ONE premium idea for free
-        business_type = "business"  # Default for first message
-        premium_idea = generate_ai_ideas(business_type)
-        resp.message(f"🎁 WELCOME BONUS!\n\n{premium_idea}\n\nLove this? Reply 'SUBSCRIBE' for daily strategies! 🚀")
-        
-        # Update message count and set first message date
-        supabase.table('profiles').update({
-            'message_count': 1,
-            'first_message_date': datetime.now().isoformat()
-        }).eq('id', user_profile['id']).execute()
-        
-        # Schedule reminder for next day
-        schedule_reminder(phone_number, "next_day_morning")
-        
+    # Check if user is in onboarding flow
+    if user_sessions.get(phone_number, {}).get('onboarding'):
+        onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
+        resp.message(response_message)
         return str(resp)
     
-    # Check if user is in plan selection state - THIS MUST COME FIRST
+    # FREE FIRST EXPERIENCE - Check if first-time user
+    if user_profile.get('message_count', 0) == 0 and ('hello' in incoming_msg or 'start' in incoming_msg or 'hi' in incoming_msg):
+        # Start business onboarding instead of immediate idea
+        onboarding_message = start_business_onboarding(phone_number, user_profile)
+        resp.message(onboarding_message)
+        return str(resp)
+    
+    # Check if user is in plan selection state
     if user_sessions.get(phone_number, {}).get('state') == 'awaiting_plan_selection':
         print(f"DEBUG: User {phone_number} is in plan selection state")
         
@@ -214,19 +313,15 @@ def webhook():
         elif 'pro' in incoming_msg:
             selected_plan = 'pro'
         else:
-            # If the user sent an invalid response, prompt again
             resp.message("You didn't reply with any of the available selections. Please reply with 'Basic', 'Growth', or 'Pro'.")
             return str(resp)
         
-        # Clear the state now that we've processed the plan selection
         user_sessions[phone_number]['state'] = None
         
-        # Send payment instructions for the selected plan
         plan_data = PLANS[selected_plan]
         payment_message = f"Excellent choice! To activate your *{selected_plan.capitalize()} Plan*, please send KSh {plan_data['price']} to PayBill XXXX Acc: {phone_number}.\n\n"
         payment_message += "Then, forward the M-Pesa confirmation message to me."
         
-        # Store the selected plan for this user
         user_sessions[phone_number]['selected_plan'] = selected_plan
         
         resp.message(payment_message)
@@ -234,14 +329,17 @@ def webhook():
     
     # Process other commands
     if 'hello' in incoming_msg or 'hi' in incoming_msg or 'start' in incoming_msg:
-        resp.message("Hello! Welcome to our business assistant. To start, please reply 'status' to check your subscription status or 'subscribe' to choose a subscription plan.")
+        if not user_profile.get('profile_complete'):
+            onboarding_message = start_business_onboarding(phone_number, user_profile)
+            resp.message(onboarding_message)
+        else:
+            resp.message("Hello! Welcome back! Reply 'ideas for my business' for marketing ideas or 'status' to check your subscription.")
     
     elif 'status' in incoming_msg:
         if check_subscription(user_profile['id']):
             plan_info = get_user_plan_info(user_profile['id'])
             plan_type = plan_info.get('plan_type', 'unknown')
             
-            # Get usage statistics
             remaining_ideas = get_remaining_ideas(user_profile['id'])
             
             status_message = f"""
@@ -258,7 +356,7 @@ Remaining ideas: {remaining_ideas}/{
     'Unlimited'
 }
 
-💡 NEXT: Reply 'ideas for my [business type]' to generate marketing content!
+💡 NEXT: Reply 'ideas for my business' to generate marketing content!
             """
             
             resp.message(status_message)
@@ -268,14 +366,12 @@ Remaining ideas: {remaining_ideas}/{
     elif 'subscribe' in incoming_msg:
         print(f"DEBUG: User {phone_number} requested subscription")
         
-        # Send plan selection message
         plan_selection_message = "Great! Please choose your monthly plan to continue:\n\n"
         plan_selection_message += "1. *Basic Plan* - KSh {}\n   ({})\n".format(PLANS['basic']['price'], PLANS['basic']['description'])
         plan_selection_message += "2. *Growth Plan* - KSh {}\n   ({})\n".format(PLANS['growth']['price'], PLANS['growth']['description'])
         plan_selection_message += "3. *Pro Plan* - KSh {}\n   ({})\n\n".format(PLANS['pro']['price'], PLANS['pro']['description'])
         plan_selection_message += "Please reply with 'Basic', 'Growth', or 'Pro'."
         
-        # Store that user is in plan selection mode
         if phone_number not in user_sessions:
             user_sessions[phone_number] = {}
         user_sessions[phone_number]['state'] = 'awaiting_plan_selection'
@@ -284,14 +380,17 @@ Remaining ideas: {remaining_ideas}/{
         resp.message(plan_selection_message)
     
     elif 'ideas for my' in incoming_msg:
-        # Extract business type from the message
-        business_type = incoming_msg.replace('ideas for my', '').strip()
-        if not business_type:
-            business_type = "business"
+        # Check if profile is complete
+        if not user_profile.get('profile_complete'):
+            resp.message("Please complete your business profile first! Reply 'hello' to get started.")
+            return str(resp)
+        
+        # Use stored business data instead of message extraction
+        business_type = user_profile.get('business_type', 'business')
         
         # Check if user has subscription
         if check_subscription(user_profile['id']):
-            ideas = generate_ai_ideas(business_type)
+            ideas = generate_ai_ideas(user_profile)
             
             # Split ideas into individual messages
             idea_list = ideas.split('\n')
@@ -311,7 +410,7 @@ Remaining ideas: {remaining_ideas}/{
             resp.message("You need an active subscription to get ideas. Reply 'subscribe' to see our plans.")
     
     else:
-        resp.message("I'm still learning. Try 'hello', 'status', or 'ideas for my bakery'.")
+        resp.message("I'm still learning. Try 'hello', 'status', or 'ideas for my business'.")
     
     return str(resp)
 
