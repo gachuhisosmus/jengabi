@@ -61,23 +61,17 @@ def get_or_create_profile(phone_number):
             print(f"User found: {response.data[0]}")
             user_data = response.data[0]
             
-            # Ensure all columns exist in the response with default values
-            default_values = {
-                'message_count': 0,
-                'first_message_date': None,
-                'business_name': None,
-                'business_type': None,
-                'business_location': None,
-                'business_phone': None,
-                'website': None,
-                'business_marketing_goals': None,
-                'profile_complete': False
-            }
-            
-            for field, default_value in default_values.items():
+            # Ensure all columns exist in the response
+            for field in ['message_count', 'first_message_date', 'business_name', 
+                         'business_type', 'business_location', 'business_phone', 
+                         'website', 'profile_complete', 'business_marketing_goals']:
                 if field not in user_data:
-                    user_data[field] = default_value
-            
+                    user_data[field] = None
+            if user_data.get('message_count') is None:
+                user_data['message_count'] = 0
+            if user_data.get('profile_complete') is None:
+                user_data['profile_complete'] = False
+                
             return user_data
         
         # If the user does NOT exist, create a new profile
@@ -88,21 +82,7 @@ def get_or_create_profile(phone_number):
                 "profile_complete": False
             }).execute()
             print(f"New user created: {new_profile.data[0]}")
-            
-            # Add default values to the new profile
-            new_profile_data = new_profile.data[0].copy()
-            default_values = {
-                'first_message_date': None,
-                'business_name': None,
-                'business_type': None,
-                'business_location': None,
-                'business_phone': None,
-                'website': None,
-                'business_marketing_goals': None
-            }
-            new_profile_data.update(default_values)
-            
-            return new_profile_data
+            return new_profile.data[0]
             
     except Exception as e:
         print(f"Database error in get_or_create_profile: {e}")
@@ -114,20 +94,23 @@ def start_business_onboarding(phone_number, user_profile):
         user_sessions[phone_number] = {}
     
     user_sessions[phone_number]['onboarding'] = True
-    user_sessions[phone_number]['onboarding_step'] = 0
+    user_sessions[phone_number]['onboarding_step'] = -1  # Start at confirmation step
     user_sessions[phone_number]['business_data'] = {}
     
     return """
 🎯 LET'S PERSONALIZE YOUR EXPERIENCE!
 
-To give you the BEST marketing ideas, I need to know about your business.
+To give you the BEST marketing ideas, I need to know a few details about your business.
 
-What's your business name?
+This will take about 2 minutes with 6 quick questions.
+
+To continue, reply with ✅ 1
+To exit, reply with ❌ 0
 """
 
 def handle_onboarding_response(phone_number, incoming_msg, user_profile):
     """Handle business profile onboarding steps"""
-    step = user_sessions[phone_number].get('onboarding_step', 0)
+    step = user_sessions[phone_number].get('onboarding_step', -1)
     business_data = user_sessions[phone_number].get('business_data', {})
     
     steps = [
@@ -139,7 +122,19 @@ def handle_onboarding_response(phone_number, incoming_msg, user_profile):
         {"question": "Do you have a website or social media? (optional)", "field": "website"}
     ]
     
-    # Save current step response
+    # Handle confirmation step (step -1)
+    if step == -1:
+        if incoming_msg.strip() == '1':
+            user_sessions[phone_number]['onboarding_step'] = 0
+            return False, steps[0]["question"]
+        elif incoming_msg.strip() == '0':
+            # User opted out
+            user_sessions[phone_number]['onboarding'] = False
+            return True, "No problem! You can set up your business profile later. Reply 'hello' anytime to start."
+        else:
+            return False, "Please reply with ✅ 1 to continue or ❌ 0 to exit."
+    
+    # Save current step response for actual questions (step >= 0)
     if step > 0:
         previous_field = steps[step-1]["field"]
         business_data[previous_field] = incoming_msg
@@ -385,7 +380,7 @@ Remaining ideas: {remaining_ideas}/{
             resp.message("Please complete your business profile first! Reply 'hello' to get started.")
             return str(resp)
         
-        # Use stored business data instead of message extraction
+        # Use stored business data for personalized ideas
         business_type = user_profile.get('business_type', 'business')
         
         # Check if user has subscription
