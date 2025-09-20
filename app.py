@@ -352,6 +352,53 @@ def get_remaining_messages(profile_id):
         print(f"Error getting remaining messages: {e}")
         return 15
 
+def handle_user_without_products(phone_number, user_profile, incoming_msg):
+    """Handle existing users who don't have products saved"""
+    if phone_number not in user_sessions:
+        user_sessions[phone_number] = {}
+    
+    # Check if we're already helping them add products
+    if user_sessions[phone_number].get('adding_products'):
+        if incoming_msg.strip().lower() == 'skip':
+            # User wants to skip product saving
+            user_sessions[phone_number]['adding_products'] = False
+            return start_product_selection(phone_number, user_profile)
+        
+        # Save their products
+        products = [p.strip() for p in incoming_msg.split(',') if p.strip()]
+        
+        if not products:
+            return "Please provide your products separated by commas (e.g., Shoes, Bags, Accessories) or reply 'skip' to use default options."
+        
+        # Save to database
+        try:
+            supabase.table('profiles').update({
+                'business_products': products
+            }).eq('id', user_profile['id']).execute()
+            print(f"Saved products for user {user_profile['id']}: {products}")
+        except Exception as e:
+            print(f"Error saving products: {e}")
+            return "Sorry, I couldn't save your products. Please try again later."
+        
+        # Clear the flag and continue with product selection
+        user_sessions[phone_number]['adding_products'] = False
+        user_profile['business_products'] = products  # Update local profile
+        
+        return start_product_selection(phone_number, user_profile)
+    
+    # First time detection - offer to add their products
+    user_sessions[phone_number]['adding_products'] = True
+    return """
+📝 I notice I don't know your products yet.
+
+Would you like to save your main products so I can give you better ideas?
+
+Please reply with your products separated by commas:
+Example: "Shoes, Bags, Accessories, Jewelry"
+
+Or reply 'skip' to use default options.
+"""
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     print(f"Raw request values: {dict(request.values)}")
@@ -374,6 +421,13 @@ def webhook():
             user_sessions[phone_number]['onboarding'] = False
             user_sessions[phone_number]['awaiting_product_selection'] = False
             user_sessions[phone_number]['awaiting_custom_product'] = False
+            user_sessions[phone_number]['adding_products'] = False
+    
+    # ✅ Handle users adding products
+    if user_sessions.get(phone_number, {}).get('adding_products'):
+        response = handle_user_without_products(phone_number, user_profile, incoming_msg)
+        resp.message(response)
+        return str(resp)
     
     # Handle onboarding flow
     if user_sessions.get(phone_number, {}).get('onboarding'):
@@ -408,6 +462,16 @@ def webhook():
             resp.message(f"🎯 IDEAS FOR {', '.join(selected_products).upper()}:\n\n{ideas}")
             update_message_usage(user_profile['id'])
             return str(resp)
+    
+    # ✅ Check for existing users without products
+    if (user_profile.get('profile_complete') and 
+        (not user_profile.get('business_products') or len(user_profile.get('business_products', [])) == 0) and
+        incoming_msg.strip() == '1' and
+        not user_sessions.get(phone_number, {}).get('adding_products')):
+        
+        response = handle_user_without_products(phone_number, user_profile, incoming_msg)
+        resp.message(response)
+        return str(resp)
     
     # FREE FIRST EXPERIENCE for new users
     if user_profile.get('message_count', 0) == 0 and ('hello' in incoming_msg or 'start' in incoming_msg or 'hi' in incoming_msg):
@@ -455,6 +519,7 @@ def webhook():
             resp.message(onboarding_message)
         else:
             resp.message("Hello! Welcome back! Reply '1' for marketing ideas or 'status' to check your subscription.")
+        return str(resp)
     
     elif 'status' in incoming_msg:
         if check_subscription(user_profile['id']):
@@ -478,6 +543,7 @@ Remaining: {remaining} messages
             resp.message(status_message)
         else:
             resp.message("You don't have an active subscription. Reply 'subscribe' to choose a plan!")
+        return str(resp)
     
     elif 'subscribe' in incoming_msg:
         plan_selection_message = "Great! Choose your monthly plan:\n\n1. *Basic* - KSh 299 (5 ideas/week)\n2. *Growth* - KSh 599 (15 ideas + captions)\n3. *Pro* - KSh 999 (Unlimited)\n\nReply with 'Basic', 'Growth', or 'Pro'."
@@ -485,6 +551,7 @@ Remaining: {remaining} messages
             user_sessions[phone_number] = {}
         user_sessions[phone_number]['state'] = 'awaiting_plan_selection'
         resp.message(plan_selection_message)
+        return str(resp)
     
     elif 'help' in incoming_msg:
         resp.message("""
@@ -497,11 +564,13 @@ Remaining: {remaining} messages
 
 I help African businesses create effective WhatsApp marketing!
 """)
+        return str(resp)
     
     else:
         # Always respond intelligently
         intelligent_response = get_intelligent_response(incoming_msg, user_profile)
         resp.message(intelligent_response)
+        return str(resp)
     
     return str(resp)
 
