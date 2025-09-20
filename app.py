@@ -300,7 +300,7 @@ def get_intelligent_response(incoming_msg, user_profile):
     
     # Default helpful response
     help_options = "Reply '1' for marketing ideas, 'status' for subscription info, or 'help' for more options."
-    return f"I'm here to help your business{business_context}! {help_options}"
+    return f"I'm here to help your{business_context}business with marketing ideas! {help_options}"
 
 def check_subscription(profile_id):
     """Checks if the user has an active subscription."""
