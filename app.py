@@ -27,7 +27,7 @@ def home():
     })
 
 # Initialize the Supabase client
-supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
+supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
 
 # Initialize user sessions dictionary
 user_sessions = {}
