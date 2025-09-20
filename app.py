@@ -120,6 +120,12 @@ def start_business_onboarding(phone_number, user_profile):
 
 def handle_onboarding_response(phone_number, incoming_msg, user_profile):
     """Handle business profile onboarding steps"""
+    # check if user is trying to send a command during onboarding
+    if incoming_msg.strip() in ['1', 'status', 'subscribe', 'help', 'hello']:
+        # Exit onboarding and process the command
+        user_sessions[phone_number]['onboarding'] = False
+        return True, "I'll process your command. Please wait..."
+    
     step = user_sessions[phone_number].get('onboarding_step', 0)
     business_data = user_sessions[phone_number].get('business_data', {})
     
@@ -360,12 +366,25 @@ def webhook():
     if not user_profile:
         resp.message("Sorry, we're experiencing technical difficulties. Please try again later.")
         return str(resp)
+        
+    # ✅ PRIORITY COMMANDS CHECK - Clear any ongoing flows
+    priority_commands = ['1', 'status', 'subscribe', 'help', 'exit', 'cancel']
+    if incoming_msg.strip() in priority_commands:
+        if phone_number in user_sessions:
+            user_sessions[phone_number]['onboarding'] = False
+            user_sessions[phone_number]['awaiting_product_selection'] = False
+            user_sessions[phone_number]['awaiting_custom_product'] = False
     
     # Handle onboarding flow
     if user_sessions.get(phone_number, {}).get('onboarding'):
-        onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
-        resp.message(response_message)
-        return str(resp)
+        # Allow users to exit onboarding with commands
+        if incoming_msg.strip() in priority_commands:
+            user_sessions[phone_number]['onboarding'] = False
+            # Let the message continue to normal processing
+        else:
+            onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
+            resp.message(response_message)
+            return str(resp)
     
     # Handle custom product input
     if user_sessions.get(phone_number, {}).get('awaiting_custom_product'):
