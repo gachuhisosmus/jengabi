@@ -178,6 +178,9 @@ Reply '1' to generate marketing ideas or 'subscribe' to choose a plan.
     return False, steps[step]["question"]
 
 def start_product_selection(phone_number, user_profile):
+    # Initialize a session for the user if it doesn't exist
+    if phone_number not in user_sessions:
+        user_sessions[phone_number] = {}
     """Start product-based marketing idea generation"""
     user_sessions[phone_number]['awaiting_product_selection'] = True
     
@@ -389,9 +392,9 @@ def handle_user_without_products(phone_number, user_profile, incoming_msg):
     # First time detection - offer to add their products
     user_sessions[phone_number]['adding_products'] = True
     return """
-📝 I notice I don't know your products yet.
+📝 I notice I don't know your business products/items for sale yet.
 
-Would you like to save your main products so I can give you better ideas?
+Would you like to save your main products so I can give you better marketing ideas?
 
 Please reply with your products separated by commas:
 Example: "Shoes, Bags, Accessories, Jewelry"
