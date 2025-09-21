@@ -35,17 +35,17 @@ user_sessions = {}
 # Define plans
 PLANS = {
     'basic': {
-        'price': 299,
+        'price': 130,
         'description': '5 advertising ideas per week',
         'keyword': 'basic'
     },
     'growth': {
-        'price': 599,
+        'price': 249,
         'description': '15 ideas + social media captions',
         'keyword': 'growth'
     },
     'pro': {
-        'price': 999,
+        'price': 599,
         'description': 'Unlimited ideas + full marketing strategies',
         'keyword': 'pro'
     }
@@ -189,7 +189,7 @@ def start_product_selection(phone_number, user_profile):
     product_list = "\n".join([f"{i+1}. {product}" for i, product in enumerate(products)])
     
     return f"""
-🎯 SELECT PRODUCTS TO PROMOTE:
+🎯 HERE ARE YOUR MAIN BUSINESS PRODUCTS. SELECT THE PRODUCTS YOU WANT TO PROMOTE:
 
 {product_list}
 
