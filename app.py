@@ -166,9 +166,9 @@ def handle_onboarding_response(phone_number, incoming_msg, user_profile):
         return True, """
 ✅ PROFILE COMPLETE! Welcome to JENGABI your business marketing assistance. 
 
-Now I can create personalized marketing ideas for your business!
+Now I can create personalized social media marketing ideas for your business!
 
-Reply '1' to generate marketing ideas or 'subscribe' to choose a plan.
+Reply '1' to generate social media marketing ideas or 'subscribe' to choose a plan.
 """
     
     # Ask next question
@@ -231,7 +231,7 @@ def handle_product_selection(incoming_msg, user_profile, phone_number):
         return None, "Please select products using numbers (e.g., 1,3,5)"
 
 def generate_realistic_ideas(user_profile, products, num_ideas=3):
-    """Generate practical, achievable marketing ideas"""
+    """Generate practical, achievable social media marketing ideas"""
     try:
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -256,7 +256,7 @@ def generate_realistic_ideas(user_profile, products, num_ideas=3):
                 
         prompt = f"""
         Act as an expert marketing consultant for African small businesses.
-        Generate {num_ideas} highly specific, actionable WhatsApp Status ideas {business_context} focusing on {', '.join(products)}.
+        Generate {num_ideas} highly specific, actionable social media marketing ideas {business_context} focusing on {', '.join(products)}.
         
         REQUIREMENTS:
         - Each idea must be under 100 characters
@@ -278,7 +278,7 @@ def generate_realistic_ideas(user_profile, products, num_ideas=3):
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a practical marketing expert for African small businesses. Create realistic, actionable marketing ideas that drive measurable results without exaggeration."},
+                {"role": "system", "content": "You are a practical marketing expert for African small businesses. Create realistic, actionable social media marketing ideas that drive measurable results without exaggeration."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=300,
@@ -305,11 +305,11 @@ def get_intelligent_response(incoming_msg, user_profile):
     # Business-aware responses
     business_questions = ['how', 'what', 'when', 'where', 'why', 'can i', 'should i', 'advice']
     if any(q in incoming_msg for q in business_questions) and business_context:
-        return f"I'll help you with that{business_context}! Reply '1' for specific marketing ideas or ask me anything about your business."
+        return f"I'll help you with that{business_context}! Reply '1' for specific social media marketing ideas or ask me anything about your business."
     
     # Default helpful response
-    help_options = "Reply '1' for marketing ideas, 'status' for subscription info, or 'help' for more options."
-    return f"I'm here to help your{business_context} business with marketing ideas! {help_options}"
+    help_options = "Reply '1' for social media marketing ideas, 'status' for subscription info, or 'help' for more options."
+    return f"I'm here to help your{business_context} business with social media marketing ideas! {help_options}"
 
 def check_subscription(profile_id):
     """Checks if the user has an active subscription."""
@@ -394,7 +394,7 @@ def handle_user_without_products(phone_number, user_profile, incoming_msg):
     return """
 📝 I notice I don't know your business products/items for sale yet.
 
-Would you like to save your main products so I can give you better marketing ideas?
+Would you like to save your main products so I can give you better social media marketing ideas?
 
 Please reply with your products separated by commas:
 Example: "Shoes, Bags, Accessories, Jewelry"
@@ -521,7 +521,7 @@ def webhook():
             onboarding_message = start_business_onboarding(phone_number, user_profile)
             resp.message(onboarding_message)
         else:
-            resp.message("Hello! Welcome back! Reply '1' for marketing ideas or 'status' to check your subscription.")
+            resp.message("Hello! Welcome back! Reply '1' for social media marketing ideas or 'status' to check your subscription.")
         return str(resp)
     
     elif 'status' in incoming_msg:
@@ -553,7 +553,7 @@ Benefits: {PLANS[plan_type]['description']}
 Used: {user_profile.get('used_messages', 0)} messages
 Remaining: {remaining} messages
 
-💡 Reply '1' to generate marketing ideas"""
+💡 Reply '1' to generate social media marketing ideas"""
                 else:
                     status_message = f"""📊 YOUR SUBSCRIPTION STATUS:
 
@@ -562,7 +562,7 @@ Plan: Active Subscription
 Used: {user_profile.get('used_messages', 0)} messages
 Remaining: {remaining} messages
 
-💡 Reply '1' to generate marketing ideas"""
+💡 Reply '1' to generate social media marketing ideas"""
             
             else:
                 # User has NO subscription
@@ -595,12 +595,12 @@ Reply with 'Basic', 'Growth', or 'Pro'."""
     elif 'help' in incoming_msg:
         resp.message("""🤖 JengaBIBOT HELP:
 
-• '1' - Generate marketing ideas
+• '1' - Generate social media marketing ideas
 • 'status' - Check subscription  
 • 'subscribe' - Choose a plan
 • 'hello' - Start over
 
-I help African businesses create effective WhatsApp marketing!""")
+I help African businesses create effective business marketing marketing tips!""")
         return str(resp)
     
     else:
