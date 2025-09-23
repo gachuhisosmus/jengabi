@@ -164,7 +164,7 @@ def handle_onboarding_response(phone_number, incoming_msg, user_profile):
         user_sessions[phone_number]['onboarding_step'] = 0
         
         return True, """
-✅ PROFILE COMPLETE! 
+✅ PROFILE COMPLETE! Welcome to JENGABI your business marketing assistance. 
 
 Now I can create personalized marketing ideas for your business!
 
@@ -525,13 +525,25 @@ def webhook():
         return str(resp)
     
     elif 'status' in incoming_msg:
-        if check_subscription(user_profile['id']):
-            plan_info = get_user_plan_info(user_profile['id'])
-            plan_type = plan_info.get('plan_type', 'unknown')
-            remaining = get_remaining_messages(user_profile['id'])
+        try:
+            # Check subscription with better error handling
+            has_subscription = check_subscription(user_profile['id'])
             
-            status_message = f"""
-📊 YOUR SUBSCRIPTION STATUS:
+            if has_subscription:
+                # User HAS a subscription
+                plan_info = get_user_plan_info(user_profile['id'])
+                
+                # Safely handle plan_info
+                if plan_info and isinstance(plan_info, dict):
+                    plan_type = plan_info.get('plan_type', 'unknown')
+                else:
+                    plan_type = 'unknown'
+                
+                remaining = get_remaining_messages(user_profile['id'])
+                
+                # Build status message for subscribed users
+                if plan_type in PLANS:
+                    status_message = f"""📊 YOUR SUBSCRIPTION STATUS:
 
 Plan: {plan_type.upper()} Package
 Price: KSh {PLANS[plan_type]['price']}/month
@@ -541,15 +553,39 @@ Benefits: {PLANS[plan_type]['description']}
 Used: {user_profile.get('used_messages', 0)} messages
 Remaining: {remaining} messages
 
-💡 Reply '1' to generate marketing ideas
-"""
+💡 Reply '1' to generate marketing ideas"""
+                else:
+                    status_message = f"""📊 YOUR SUBSCRIPTION STATUS:
+
+Plan: Active Subscription
+📈 USAGE THIS MONTH:
+Used: {user_profile.get('used_messages', 0)} messages
+Remaining: {remaining} messages
+
+💡 Reply '1' to generate marketing ideas"""
+            
+            else:
+                # User has NO subscription
+                status_message = "You don't have an active subscription. Reply 'subscribe' to choose a plan!"
+            
+            # Send the message
             resp.message(status_message)
-        else:
-            resp.message("You don't have an active subscription. Reply 'subscribe' to choose a plan!")
+            
+        except Exception as e:
+            print(f"Error in status command: {e}")
+            resp.message("Sorry, I couldn't check your status right now. Please try again later.")
+        
         return str(resp)
-    
+
     elif 'subscribe' in incoming_msg:
-        plan_selection_message = "Great! Choose your monthly plan:\n\n1. *Basic* - KSh 299 (5 ideas/week)\n2. *Growth* - KSh 599 (15 ideas + captions)\n3. *Pro* - KSh 999 (Unlimited)\n\nReply with 'Basic', 'Growth', or 'Pro'."
+        plan_selection_message = """Great! Choose your monthly plan:
+
+1. *Basic* - KSh 299 (5 ideas/week)
+2. *Growth* - KSh 599 (15 ideas + captions)  
+3. *Pro* - KSh 999 (Unlimited ideas + strategies)
+
+Reply with 'Basic', 'Growth', or 'Pro'."""
+        
         if phone_number not in user_sessions:
             user_sessions[phone_number] = {}
         user_sessions[phone_number]['state'] = 'awaiting_plan_selection'
@@ -557,16 +593,14 @@ Remaining: {remaining} messages
         return str(resp)
     
     elif 'help' in incoming_msg:
-        resp.message("""
-🤖 JengaBIBOT HELP:
+        resp.message("""🤖 JengaBIBOT HELP:
 
 • '1' - Generate marketing ideas
 • 'status' - Check subscription  
 • 'subscribe' - Choose a plan
 • 'hello' - Start over
 
-I help African businesses create effective WhatsApp marketing!
-""")
+I help African businesses create effective WhatsApp marketing!""")
         return str(resp)
     
     else:
