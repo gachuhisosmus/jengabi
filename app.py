@@ -298,7 +298,7 @@ def get_intelligent_response(incoming_msg, user_profile):
     # Check if we have business context
     business_context = ""
     if user_profile.get('business_name'):
-        business_context = f" for {user_profile['business_name']}"
+        business_context = f" {user_profile['business_name']}"
     if user_profile.get('business_type'):
         business_context += f" ({user_profile['business_type']})"
     
