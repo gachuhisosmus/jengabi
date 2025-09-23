@@ -36,18 +36,21 @@ user_sessions = {}
 PLANS = {
     'basic': {
         'price': 130,
-        'description': '5 advertising ideas per week',
-        'keyword': 'basic'
+        'description': '5 social media ideas per week',
+        'keyword': 'basic',
+        'output_type': 'ideas'
     },
     'growth': {
         'price': 249,
-        'description': '15 ideas + social media captions',
-        'keyword': 'growth'
+        'description': '15 ideas + weekly content strategy',
+        'keyword': 'growth',
+        'output_type': 'ideas_strategy'
     },
     'pro': {
         'price': 599,
         'description': 'Unlimited ideas + full marketing strategies',
-        'keyword': 'pro'
+        'keyword': 'pro',
+        'output_type': 'strategies'
     }
 }
 
@@ -230,8 +233,8 @@ def handle_product_selection(incoming_msg, user_profile, phone_number):
         print(f"Error handling product selection: {e}")
         return None, "Please select products using numbers (e.g., 1,3,5)"
 
-def generate_realistic_ideas(user_profile, products, num_ideas=3):
-    """Generate practical, achievable social media marketing ideas"""
+def generate_realistic_ideas(user_profile, products, output_type='ideas', num_ideas=3):
+    """Generate practical, achievable social media marketing content based on plan type"""
     try:
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -245,43 +248,86 @@ def generate_realistic_ideas(user_profile, products, num_ideas=3):
         if user_profile.get('business_location'):
             business_context += f" located in {user_profile['business_location']}"
         
-        realistic_promises = [
-            "increase customer engagement",
-            "boost brand awareness", 
-            "drive more foot traffic",
-            "generate quality leads",
-            "improve customer retention",
-            "enhance social media presence"
-        ]
-                
-        prompt = f"""
-        Act as an expert marketing consultant for African small businesses.
-        Generate {num_ideas} highly specific, actionable social media marketing ideas {business_context} focusing on {', '.join(products)}.
-        
-        REQUIREMENTS:
-        - Each idea must be under 100 characters
-        - Include emojis relevant to African business culture
-        - Make it specific to their products and local context
-        - Focus on solving customer problems, not just features
-        - Include a clear call-to-action
-        - Use realistic outcomes like '{random.choice(realistic_promises)}'
-        - Avoid exaggerated promises or specific numbers
-        - Make it engaging and compelling
-        
-        FORMAT:
-        1. [Idea 1]  
-        2. [Idea 2]
-        3. [Idea 3]
-        """
+        # Determine prompt based on output_type (plan level)
+        if output_type == 'ideas':
+            prompt = f"""
+            Act as an expert marketing consultant for African small businesses.
+            Generate {num_ideas} highly specific, actionable social media post ideas {business_context} focusing on {', '.join(products)}.
+            
+            REQUIREMENTS:
+            - Each idea must be under 100 characters
+            - Include emojis relevant to African business culture
+            - Make it specific to their products and local context
+            - Focus on solving customer problems, not just features
+            - Include a clear call-to-action
+            - Make it engaging and compelling
+            
+            FORMAT:
+            1. [Idea 1]  
+            2. [Idea 2]
+            3. [Idea 3]
+            """
+        elif output_type == 'ideas_strategy':
+            prompt = f"""
+            Act as an expert marketing consultant for African small businesses.
+            Create {num_ideas} social media post ideas PLUS a mini-strategy {business_context} for {', '.join(products)}.
+            
+            REQUIREMENTS:
+            - First, provide {num_ideas} specific post ideas (under 100 characters each)
+            - Then, add a 3-point weekly content strategy
+            - Include platform recommendations (WhatsApp, Facebook, Instagram, TikTok)
+            - Make it practical for small business owners
+            - Include emojis and local context
+            
+            FORMAT:
+            🎯 POST IDEAS:
+            1. [Idea 1]
+            2. [Idea 2]
+            3. [Idea 3]
+            
+            📈 MINI-STRATEGY:
+            • [Strategy point 1]
+            • [Strategy point 2]
+            • [Strategy point 3]
+            """
+        else:  # strategies
+            prompt = f"""
+            Act as an expert marketing consultant for African small businesses.
+            Create a comprehensive marketing strategy {business_context} for {', '.join(products)}.
+            
+            REQUIREMENTS:
+            - Provide a 7-day content plan
+            - Include target audience analysis
+            - Suggest platform-specific approaches
+            - Include engagement tactics
+            - Add performance measurement tips
+            - Make it actionable and realistic
+            
+            FORMAT:
+            📊 COMPREHENSIVE MARKETING STRATEGY
+            
+            🎯 TARGET AUDIENCE:
+            • [Audience insight 1]
+            • [Audience insight 2]
+            
+            📅 7-DAY CONTENT PLAN:
+            Monday: [Content focus]
+            Tuesday: [Content focus]
+            ...
+            
+            💡 ENGAGEMENT TACTICS:
+            • [Tactic 1]
+            • [Tactic 2]
+            """
         
         # Call the OpenAI API
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a practical marketing expert for African small businesses. Create realistic, actionable social media marketing ideas that drive measurable results without exaggeration."},
+                {"role": "system", "content": "You are a practical marketing expert for African small businesses. Create realistic, actionable social media marketing content for platforms like TikTok, WhatsApp, Facebook, Instagram, Twitter that drive measurable results."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=300,
+            max_tokens=400 if output_type == 'strategies' else 300,
             temperature=0.8,
         )
         
@@ -291,7 +337,7 @@ def generate_realistic_ideas(user_profile, products, num_ideas=3):
         
     except Exception as e:
         print(f"OpenAI API Error: {e}")
-        return "Sorry, I'm having trouble generating ideas right now. Please try again in a moment."
+        return "Sorry, I'm having trouble generating content right now. Please try again in a moment."
 
 def get_intelligent_response(incoming_msg, user_profile):
     """Always provide a context-aware response"""
@@ -322,11 +368,16 @@ def check_subscription(profile_id):
         return False
 
 def get_user_plan_info(profile_id):
-    """Gets the user's plan type."""
+    """Gets the user's plan type and output_type."""
     try:
         response = supabase.table('subscriptions').select('plan_type').eq('profile_id', profile_id).eq('is_active', True).execute()
         if response.data:
-            return response.data[0]
+            plan_data = response.data[0]
+            # Add output_type based on plan_type
+            plan_type = plan_data.get('plan_type')
+            if plan_type in PLANS:
+                plan_data['output_type'] = PLANS[plan_type]['output_type']
+            return plan_data
         return None
     except Exception as e:
         print(f"Error getting plan info: {e}")
@@ -335,9 +386,14 @@ def get_user_plan_info(profile_id):
 def update_message_usage(profile_id, count=1):
     """Update message usage count"""
     try:
-        supabase.table('profiles').update({
-            'used_messages': supabase.get('used_messages', 0) + count
-        }).eq('id', profile_id).execute()
+        # First get current value
+        response = supabase.table('profiles').select('used_messages').eq('id', profile_id).execute()
+        if response.data:
+            current_used = response.data[0].get('used_messages', 0)
+            # Then update
+            supabase.table('profiles').update({
+                'used_messages': current_used + count
+            }).eq('id', profile_id).execute()
     except Exception as e:
         print(f"Error updating message usage: {e}")
 
@@ -448,7 +504,12 @@ def webhook():
         user_sessions[phone_number]['custom_product'] = incoming_msg
         user_sessions[phone_number]['awaiting_custom_product'] = False
         products = [incoming_msg]
-        ideas = generate_realistic_ideas(user_profile, products)
+        
+        # Get user's plan type to determine output type
+        plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
+        output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
+        
+        ideas = generate_realistic_ideas(user_profile, products, output_type)
         resp.message(f"🎯 IDEAS FOR '{incoming_msg.upper()}':\n\n{ideas}")
         update_message_usage(user_profile['id'])
         return str(resp)
@@ -461,8 +522,13 @@ def webhook():
             return str(resp)
         if selected_products:
             user_sessions[phone_number]['awaiting_product_selection'] = False
-            ideas = generate_realistic_ideas(user_profile, selected_products)
-            resp.message(f"🎯 IDEAS FOR {', '.join(selected_products).upper()}:\n\n{ideas}")
+            
+            # Get user's plan type to determine output type
+            plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
+            output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
+            
+            ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
+            resp.message(f"🎯 CONTENT FOR {', '.join(selected_products).upper()}:\n\n{ideas}")
             update_message_usage(user_profile['id'])
             return str(resp)
     
@@ -536,8 +602,10 @@ def webhook():
                 # Safely handle plan_info
                 if plan_info and isinstance(plan_info, dict):
                     plan_type = plan_info.get('plan_type', 'unknown')
+                    output_type = plan_info.get('output_type', 'ideas')
                 else:
                     plan_type = 'unknown'
+                    output_type = 'ideas'
                 
                 remaining = get_remaining_messages(user_profile['id'])
                 
@@ -548,21 +616,23 @@ def webhook():
 Plan: {plan_type.upper()} Package
 Price: KSh {PLANS[plan_type]['price']}/month
 Benefits: {PLANS[plan_type]['description']}
+Content Type: {output_type.replace('_', ' ').title()}
 
 📈 USAGE THIS MONTH:
 Used: {user_profile.get('used_messages', 0)} messages
 Remaining: {remaining} messages
 
-💡 Reply '1' to generate social media marketing ideas"""
+💡 Reply '1' to generate social media marketing content"""
                 else:
                     status_message = f"""📊 YOUR SUBSCRIPTION STATUS:
 
 Plan: Active Subscription
+Content Type: {output_type.replace('_', ' ').title()}
 📈 USAGE THIS MONTH:
 Used: {user_profile.get('used_messages', 0)} messages
 Remaining: {remaining} messages
 
-💡 Reply '1' to generate social media marketing ideas"""
+💡 Reply '1' to generate social media marketing content"""
             
             else:
                 # User has NO subscription
@@ -578,11 +648,22 @@ Remaining: {remaining} messages
         return str(resp)
 
     elif 'subscribe' in incoming_msg:
-        plan_selection_message = """Great! Choose your monthly plan:
+        plan_selection_message = """Great! Choose your monthly social media marketing plan:
 
-1. *Basic* - KSh 299 (5 ideas/week)
-2. *Growth* - KSh 599 (15 ideas + captions)  
-3. *Pro* - KSh 999 (Unlimited ideas + strategies)
+🎯 BASIC - KSh 130/month
+• 5 social media post ideas per week
+• Quick, actionable content
+• Perfect for getting started
+
+🚀 GROWTH - KSh 249/month  
+• 15 ideas + weekly content strategy
+• Mini-strategies with platform tips
+• Ideal for growing businesses
+
+💎 PRO - KSh 599/month
+• Unlimited ideas + full marketing strategies
+• Comprehensive 7-day content plans
+• Target audience analysis & engagement tactics
 
 Reply with 'Basic', 'Growth', or 'Pro'."""
         
@@ -595,12 +676,12 @@ Reply with 'Basic', 'Growth', or 'Pro'."""
     elif 'help' in incoming_msg:
         resp.message("""🤖 JengaBIBOT HELP:
 
-• '1' - Generate social media marketing ideas
+• '1' - Generate social media marketing content
 • 'status' - Check subscription  
 • 'subscribe' - Choose a plan
 • 'hello' - Start over
 
-I help African businesses create effective business marketing marketing tips!""")
+I help African businesses create effective social media marketing!""")
         return str(resp)
     
     else:
