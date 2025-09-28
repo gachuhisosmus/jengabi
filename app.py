@@ -124,7 +124,7 @@ def start_business_onboarding(phone_number, user_profile):
 def handle_onboarding_response(phone_number, incoming_msg, user_profile):
     """Handle business profile onboarding steps"""
     # check if user is trying to send a command during onboarding
-    if incoming_msg.strip() in ['1', 'status', 'subscribe', 'help', 'hello']:
+    if incoming_msg.strip() in ['1', 'status', 'subscribe', 'help', 'hello', 'profile']:
         # Exit onboarding and process the command
         user_sessions[phone_number]['onboarding'] = False
         return True, "I'll process your command. Please wait..."
@@ -355,7 +355,7 @@ def get_intelligent_response(incoming_msg, user_profile):
         return f"I'll help you with that{business_context}! Reply '1' for specific social media marketing ideas or ask me anything about your business."
     
     # Default helpful response
-    help_options = "Reply '1' for social media marketing ideas, 'status' for subscription info, or 'help' for more options."
+    help_options = "Reply '1' for social media marketing ideas, 'status' for subscription info, 'profile' to manage your business info, or 'help' for more options."
     return f"I'm here to help your{business_context} business with social media marketing ideas! {help_options}"
 
 def check_subscription(profile_id):
@@ -459,6 +459,303 @@ Example: "Shoes, Bags, Accessories, Jewelry"
 Or reply 'skip' to use default options.
 """
 
+# ===== PROFILE MANAGEMENT FUNCTIONS =====
+
+def start_profile_management(phone_number, user_profile):
+    """Start profile management menu"""
+    if phone_number not in user_sessions:
+        user_sessions[phone_number] = {}
+    
+    user_sessions[phone_number]['managing_profile'] = True
+    user_sessions[phone_number]['profile_step'] = 'menu'
+    
+    profile_summary = f"""
+📊 YOUR CURRENT PROFILE:
+
+🏢 Business: {user_profile.get('business_name', 'Not set')}
+📋 Type: {user_profile.get('business_type', 'Not set')}
+📍 Location: {user_profile.get('business_location', 'Not set')}
+📞 Phone: {user_profile.get('business_phone', 'Not set')}
+🌐 Website: {user_profile.get('website', 'Not set')}
+🎯 Goals: {user_profile.get('business_marketing_goals', 'Not set')}
+
+📦 Products: {', '.join(user_profile.get('business_products', [])) or 'None'}
+
+What would you like to update?
+1. 🏢 Business Name
+2. 📋 Business Type  
+3. 📍 Location
+4. 📞 Phone Number
+5. 🌐 Website/Social Media
+6. 🎯 Marketing Goals
+7. 📦 Add/Remove Products
+8. 📊 View Full Profile
+9. ↩️ Back to Main Menu
+
+Reply with a number (1-9):
+"""
+    return profile_summary
+
+def handle_profile_management(phone_number, incoming_msg, user_profile):
+    """Handle profile management steps"""
+    step = user_sessions[phone_number].get('profile_step', 'menu')
+    
+    # Profile management menu
+    if step == 'menu':
+        if incoming_msg == '1':
+            user_sessions[phone_number]['profile_step'] = 'updating_business_name'
+            user_sessions[phone_number]['updating_field'] = 'business_name'
+            return False, "What's your new business name?"
+        
+        elif incoming_msg == '2':
+            user_sessions[phone_number]['profile_step'] = 'updating_business_type'
+            user_sessions[phone_number]['updating_field'] = 'business_type'
+            return False, "What's your business type? (e.g., restaurant, salon, retail)"
+        
+        elif incoming_msg == '3':
+            user_sessions[phone_number]['profile_step'] = 'updating_location'
+            user_sessions[phone_number]['updating_field'] = 'business_location'
+            return False, "What's your new business location?"
+        
+        elif incoming_msg == '4':
+            user_sessions[phone_number]['profile_step'] = 'updating_phone'
+            user_sessions[phone_number]['updating_field'] = 'business_phone'
+            return False, "What's your new business phone number?"
+        
+        elif incoming_msg == '5':
+            user_sessions[phone_number]['profile_step'] = 'updating_website'
+            user_sessions[phone_number]['updating_field'] = 'website'
+            return False, "What's your website or social media link?"
+        
+        elif incoming_msg == '6':
+            user_sessions[phone_number]['profile_step'] = 'updating_goals'
+            user_sessions[phone_number]['updating_field'] = 'business_marketing_goals'
+            return False, "What are your new marketing goals?"
+        
+        elif incoming_msg == '7':
+            user_sessions[phone_number]['profile_step'] = 'managing_products'
+            return start_product_management(phone_number, user_profile)
+        
+        elif incoming_msg == '8':
+            # Show full profile and return to menu
+            full_profile = get_full_profile_summary(user_profile)
+            user_sessions[phone_number]['profile_step'] = 'menu'
+            return False, f"{full_profile}\n\nWhat would you like to update? (Reply 1-9)"
+        
+        elif incoming_msg == '9':
+            # Exit profile management
+            user_sessions[phone_number]['managing_profile'] = False
+            return True, "Returning to main menu. Reply '1' for ideas, 'status' for subscription, or 'help' for options."
+        
+        else:
+            return False, "Please choose a valid option (1-9):"
+    
+    # Handle field updates
+    elif step in ['updating_business_name', 'updating_business_type', 'updating_location', 
+                  'updating_phone', 'updating_website', 'updating_goals']:
+        field = user_sessions[phone_number]['updating_field']
+        
+        # Update the field in database
+        try:
+            supabase.table('profiles').update({
+                field: incoming_msg
+            }).eq('id', user_profile['id']).execute()
+            
+            # Update local profile
+            user_profile[field] = incoming_msg
+            
+            # Return to menu
+            user_sessions[phone_number]['profile_step'] = 'menu'
+            return False, f"✅ {field.replace('_', ' ').title()} updated successfully!\n\nWhat would you like to update next? (Reply 1-9)"
+            
+        except Exception as e:
+            print(f"Error updating profile: {e}")
+            user_sessions[phone_number]['profile_step'] = 'menu'
+            return False, f"❌ Error updating profile. Please try again.\n\nWhat would you like to update? (Reply 1-9)"
+    
+    # Handle product management
+    elif step == 'managing_products':
+        return handle_product_management(phone_number, incoming_msg, user_profile)
+    
+    return False, "I didn't understand that. Please choose a valid option (1-9):"
+
+def start_product_management(phone_number, user_profile):
+    """Start product management sub-menu"""
+    current_products = user_profile.get('business_products', [])
+    products_list = "\n".join([f"   {i+1}. {product}" for i, product in enumerate(current_products)]) if current_products else "   No products yet"
+    
+    menu = f"""
+📦 MANAGE YOUR PRODUCTS:
+
+Current Products:
+{products_list}
+
+Options:
+1. ➕ Add New Product
+2. ❌ Remove Product
+3. ✏️ Edit Product
+4. 🗑️ Clear All Products
+5. ↩️ Back to Profile Menu
+
+Reply with a number (1-5):
+"""
+    user_sessions[phone_number]['profile_step'] = 'product_menu'
+    return False, menu
+
+def handle_product_management(phone_number, incoming_msg, user_profile):
+    """Handle product management actions"""
+    step = user_sessions[phone_number].get('profile_step', 'product_menu')
+    current_products = user_profile.get('business_products', [])
+    
+    if step == 'product_menu':
+        if incoming_msg == '1':
+            user_sessions[phone_number]['profile_step'] = 'adding_product'
+            return False, "What product would you like to add? (Reply with product name)"
+        
+        elif incoming_msg == '2':
+            if not current_products:
+                user_sessions[phone_number]['profile_step'] = 'product_menu'
+                return False, "❌ No products to remove.\n\nWhat would you like to do? (Reply 1-5)"
+            
+            products_list = "\n".join([f"{i+1}. {product}" for i, product in enumerate(current_products)])
+            user_sessions[phone_number]['profile_step'] = 'removing_product'
+            return False, f"Which product would you like to remove?\n\n{products_list}\n\nReply with the product number:"
+        
+        elif incoming_msg == '3':
+            if not current_products:
+                user_sessions[phone_number]['profile_step'] = 'product_menu'
+                return False, "❌ No products to edit.\n\nWhat would you like to do? (Reply 1-5)"
+            
+            products_list = "\n".join([f"{i+1}. {product}" for i, product in enumerate(current_products)])
+            user_sessions[phone_number]['profile_step'] = 'editing_product'
+            user_sessions[phone_number]['editing_index'] = None
+            return False, f"Which product would you like to edit?\n\n{products_list}\n\nReply with the product number:"
+        
+        elif incoming_msg == '4':
+            user_sessions[phone_number]['profile_step'] = 'confirm_clear'
+            return False, "⚠️ Are you sure you want to clear ALL products? This cannot be undone.\n\nReply 'YES' to confirm or 'NO' to cancel."
+        
+        elif incoming_msg == '5':
+            user_sessions[phone_number]['profile_step'] = 'menu'
+            return start_profile_management(phone_number, user_profile)
+        
+        else:
+            return False, "Please choose a valid option (1-5):"
+    
+    elif step == 'adding_product':
+        new_product = incoming_msg.strip()
+        if new_product:
+            updated_products = current_products + [new_product]
+            # Save to database
+            try:
+                supabase.table('profiles').update({
+                    'business_products': updated_products
+                }).eq('id', user_profile['id']).execute()
+                user_profile['business_products'] = updated_products
+                user_sessions[phone_number]['profile_step'] = 'product_menu'
+                return False, f"✅ '{new_product}' added successfully!\n\nWhat would you like to do next? (Reply 1-5)"
+            except Exception as e:
+                print(f"Error adding product: {e}")
+                user_sessions[phone_number]['profile_step'] = 'product_menu'
+                return False, f"❌ Error adding product. Please try again.\n\nWhat would you like to do? (Reply 1-5)"
+        else:
+            return False, "Please enter a valid product name."
+    
+    elif step == 'removing_product':
+        if incoming_msg.isdigit():
+            index = int(incoming_msg) - 1
+            if 0 <= index < len(current_products):
+                removed_product = current_products[index]
+                updated_products = current_products.copy()
+                updated_products.pop(index)
+                # Save to database
+                try:
+                    supabase.table('profiles').update({
+                        'business_products': updated_products
+                    }).eq('id', user_profile['id']).execute()
+                    user_profile['business_products'] = updated_products
+                    user_sessions[phone_number]['profile_step'] = 'product_menu'
+                    return False, f"✅ '{removed_product}' removed successfully!\n\nWhat would you like to do next? (Reply 1-5)"
+                except Exception as e:
+                    print(f"Error removing product: {e}")
+                    user_sessions[phone_number]['profile_step'] = 'product_menu'
+                    return False, f"❌ Error removing product. Please try again.\n\nWhat would you like to do? (Reply 1-5)"
+            else:
+                return False, "Invalid product number. Please try again."
+        else:
+            return False, "Please reply with a product number."
+    
+    elif step == 'editing_product':
+        if user_sessions[phone_number].get('editing_index') is None:
+            if incoming_msg.isdigit():
+                index = int(incoming_msg) - 1
+                if 0 <= index < len(current_products):
+                    user_sessions[phone_number]['editing_index'] = index
+                    return False, f"Editing '{current_products[index]}'. What should the new product name be?"
+                else:
+                    return False, "Invalid product number. Please try again."
+            else:
+                return False, "Please reply with a product number."
+        else:
+            index = user_sessions[phone_number]['editing_index']
+            new_name = incoming_msg.strip()
+            if new_name:
+                updated_products = current_products.copy()
+                updated_products[index] = new_name
+                # Save to database
+                try:
+                    supabase.table('profiles').update({
+                        'business_products': updated_products
+                    }).eq('id', user_profile['id']).execute()
+                    user_profile['business_products'] = updated_products
+                    user_sessions[phone_number]['editing_index'] = None
+                    user_sessions[phone_number]['profile_step'] = 'product_menu'
+                    return False, f"✅ Product updated to '{new_name}' successfully!\n\nWhat would you like to do next? (Reply 1-5)"
+                except Exception as e:
+                    print(f"Error updating product: {e}")
+                    user_sessions[phone_number]['profile_step'] = 'product_menu'
+                    return False, f"❌ Error updating product. Please try again.\n\nWhat would you like to do? (Reply 1-5)"
+            else:
+                return False, "Please enter a valid product name."
+    
+    elif step == 'confirm_clear':
+        if incoming_msg.lower() == 'yes':
+            # Clear all products
+            try:
+                supabase.table('profiles').update({
+                    'business_products': []
+                }).eq('id', user_profile['id']).execute()
+                user_profile['business_products'] = []
+                user_sessions[phone_number]['profile_step'] = 'product_menu'
+                return False, "✅ All products cleared successfully!\n\nWhat would you like to do next? (Reply 1-5)"
+            except Exception as e:
+                print(f"Error clearing products: {e}")
+                user_sessions[phone_number]['profile_step'] = 'product_menu'
+                return False, f"❌ Error clearing products. Please try again.\n\nWhat would you like to do? (Reply 1-5)"
+        else:
+            user_sessions[phone_number]['profile_step'] = 'product_menu'
+            return False, "Product clearance cancelled.\n\nWhat would you like to do? (Reply 1-5)"
+    
+    return False, "I didn't understand that. Please choose a valid option."
+
+def get_full_profile_summary(user_profile):
+    """Generate a complete profile summary"""
+    return f"""
+📊 COMPLETE BUSINESS PROFILE:
+
+🏢 Business Name: {user_profile.get('business_name', 'Not set')}
+📋 Business Type: {user_profile.get('business_type', 'Not set')}
+📍 Location: {user_profile.get('business_location', 'Not set')}
+📞 Business Phone: {user_profile.get('business_phone', 'Not set')}
+🌐 Website/Social: {user_profile.get('website', 'Not set')}
+🎯 Marketing Goals: {user_profile.get('business_marketing_goals', 'Not set')}
+
+📦 Products/Services:
+{chr(10).join(['   • ' + product for product in user_profile.get('business_products', [])]) or '   No products yet'}
+
+📈 Profile Status: {'✅ Complete' if user_profile.get('profile_complete') else '❌ Incomplete'}
+"""
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     print(f"Raw request values: {dict(request.values)}")
@@ -475,13 +772,20 @@ def webhook():
         return str(resp)
         
     # ✅ PRIORITY COMMANDS CHECK - Clear any ongoing flows
-    priority_commands = ['1', 'status', 'subscribe', 'help', 'exit', 'cancel']
+    priority_commands = ['1', 'status', 'subscribe', 'help', 'exit', 'cancel', 'profile']
     if incoming_msg.strip() in priority_commands:
         if phone_number in user_sessions:
             user_sessions[phone_number]['onboarding'] = False
             user_sessions[phone_number]['awaiting_product_selection'] = False
             user_sessions[phone_number]['awaiting_custom_product'] = False
             user_sessions[phone_number]['adding_products'] = False
+            user_sessions[phone_number]['managing_profile'] = False
+    
+    # ✅ Handle profile management flow
+    if user_sessions.get(phone_number, {}).get('managing_profile'):
+        profile_complete, response_message = handle_profile_management(phone_number, incoming_msg, user_profile)
+        resp.message(response_message)
+        return str(resp)
     
     # ✅ Handle users adding products
     if user_sessions.get(phone_number, {}).get('adding_products'):
@@ -588,7 +892,7 @@ def webhook():
             onboarding_message = start_business_onboarding(phone_number, user_profile)
             resp.message(onboarding_message)
         else:
-            resp.message("Hello! Welcome back! Reply '1' for social media marketing ideas or 'status' to check your subscription.")
+            resp.message("Hello! Welcome back! Reply '1' for social media marketing ideas, 'status' to check your subscription, or 'profile' to manage your business info.")
         return str(resp)
     
     elif 'status' in incoming_msg:
@@ -674,12 +978,19 @@ Reply with 'Basic', 'Growth', or 'Pro'."""
         resp.message(plan_selection_message)
         return str(resp)
     
+    elif 'profile' in incoming_msg:
+        # Start profile management
+        profile_message = start_profile_management(phone_number, user_profile)
+        resp.message(profile_message)
+        return str(resp)
+    
     elif 'help' in incoming_msg:
-        resp.message("""🤖 JengaBIBOT HELP:
+        resp.message("""🤖 JengaBI user HELP:
 
 • '1' - Generate social media marketing content
 • 'status' - Check subscription  
 • 'subscribe' - Choose a plan
+• 'profile' - Manage your business profile
 • 'hello' - Start over
 
 I help African businesses create effective social media marketing!""")
