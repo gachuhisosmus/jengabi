@@ -258,6 +258,7 @@ def generate_realistic_ideas(user_profile, products, output_type='ideas', num_id
             - Each idea must be under 100 characters
             - Include emojis relevant to African business culture
             - Make it specific to their products and local context
+            - Mix English and Kiswahili or Sheng where applicable
             - Focus on solving customer problems, not just features
             - Include a clear call-to-action
             - Make it engaging and compelling
