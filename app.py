@@ -208,25 +208,40 @@ Reply with numbers separated by commas (e.g., 1,3,5)
 def handle_product_selection(incoming_msg, user_profile, phone_number):
     """Process product selection input"""
     try:
+        print(f"DEBUG: Starting product selection with input: '{incoming_msg}'")
         products = user_profile.get('business_products', [])
         if not products:
             products = ["Main Product", "Service", "Special Offer", "New Arrival"]
         
+        print(f"DEBUG: Available products: {products} (count: {len(products)})")
+        
         selections = []
         choices = [choice.strip() for choice in incoming_msg.split(',')]
+        print(f"DEBUG: Choices after split: {choices}")
         
         for choice in choices:
+            print(f"DEBUG: Processing choice: '{choice}'")
             if choice.isdigit():
                 idx = int(choice) - 1
+                print(f"DEBUG: Choice is digit, index: {idx}")
                 if 0 <= idx < len(products):
-                    selections.append(products[idx])
+                    selected_product = products[idx]
+                    selections.append(selected_product)
+                    print(f"DEBUG: Added product: {selected_product}")
                 elif idx == len(products):  # "All Products"
                     selections = products.copy()
+                    print(f"DEBUG: Selected ALL products")
                     break
                 elif idx == len(products) + 1:  # "Other"
                     user_sessions[phone_number]['awaiting_custom_product'] = True
+                    print(f"DEBUG: Triggering custom product input")
                     return None, "Please describe the product you want to promote:"
+                else:
+                    print(f"DEBUG: Invalid index: {idx}, product count: {len(products)}")
+            else:
+                print(f"DEBUG: Choice '{choice}' is not a digit")
         
+        print(f"DEBUG: Final selections: {selections}")
         return selections, None
         
     except Exception as e:
@@ -827,21 +842,30 @@ def webhook():
     
     # Handle product selection
     if user_sessions.get(phone_number, {}).get('awaiting_product_selection'):
-        selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
-        if error_message:
-            resp.message(error_message)
-            return str(resp)
-        if selected_products:
-            user_sessions[phone_number]['awaiting_product_selection'] = False
-            
-            # Get user's plan type to determine output type
-            plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
-            output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
-            
-            ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
-            resp.message(f"🎯 CONTENT FOR {', '.join(selected_products).upper()}:\n\n{ideas}")
-            update_message_usage(user_profile['id'])
-            return str(resp)
+        print(f"DEBUG: Processing product selection for '{incoming_msg}'")
+    selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
+    print(f"DEBUG: Selected products: {selected_products}, Error: {error_message}")
+    
+    if error_message:
+        resp.message(error_message)
+        return str(resp)
+    if selected_products:
+        user_sessions[phone_number]['awaiting_product_selection'] = False
+        
+        # Get user's plan type to determine output type
+        plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
+        output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
+        
+        ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
+        resp.message(f"🎯 CONTENT FOR {', '.join(selected_products).upper()}:\n\n{ideas}")
+        update_message_usage(user_profile['id'])
+        return str(resp)
+    else:
+        # If no products selected and no error message, show the product selection menu again
+        print(f"DEBUG: No products selected, showing menu again")
+        product_message = start_product_selection(phone_number, user_profile)
+        resp.message(f"❌ Please select valid product numbers.\n\n{product_message}")
+        return str(resp)
     
     # ✅ Check for existing users without products
     if (user_profile.get('profile_complete') and 
