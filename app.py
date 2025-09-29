@@ -793,22 +793,22 @@ def webhook():
         resp.message("Sorry, we're experiencing technical difficulties. Please try again later.")
         return str(resp)
 
-    # ✅ FIRST: Handle escape commands that should reset everything
+    # ✅ FIRST: Handle escape commands that should ALWAYS work (even in profile sessions)
     escape_commands = ['exit', 'cancel', 'back', 'stop', 'quit', 'main menu', 'menu']
-    if incoming_msg in escape_commands:
+    if any(escape_cmd in incoming_msg for escape_cmd in escape_commands):
         print(f"DEBUG: Processing escape command '{incoming_msg}'")
         # Completely reset the user session
-        if phone_number in user_sessions:
-            user_sessions[phone_number] = {}
+        user_sessions[phone_number] = {}
         resp.message("🔄 Session reset. How can I help you? Reply '1' for ideas, 'status' for subscription, or 'help' for options.")
         return str(resp)
 
     # ✅ SECOND: Handle main commands that should work regardless of state
-    if incoming_msg == '1':
+    # Fix for "1" command - handle exact match and variations
+    if incoming_msg == '1' or incoming_msg == 'one' or incoming_msg == 'idea' or incoming_msg == 'ideas':
         print(f"DEBUG: Processing '1' command")
         # Clear any ongoing states
         if phone_number in user_sessions:
-            user_sessions[phone_number] = {}  # Reset completely
+            user_sessions[phone_number] = {}
         
         if not check_subscription(user_profile['id']):
             resp.message("You need a subscription to generate ideas. Reply 'subscribe' to choose a plan.")
@@ -823,11 +823,12 @@ def webhook():
         resp.message(product_message)
         return str(resp)
     
+    # Fix for "status" command - handle exact match
     elif incoming_msg == 'status':
         print(f"DEBUG: Processing 'status' command")
         # Clear any ongoing states
         if phone_number in user_sessions:
-            user_sessions[phone_number] = {}  # Reset completely
+            user_sessions[phone_number] = {}
             
         try:
             has_subscription = check_subscription(user_profile['id'])
@@ -883,24 +884,12 @@ Remaining: {remaining} messages
         
         return str(resp)
 
-    elif incoming_msg == 'hello' or incoming_msg == 'hi' or incoming_msg == 'start':
-        print(f"DEBUG: Processing greeting command")
+    # Fix for "subscribe" command - handle variations
+    elif incoming_msg == 'subscribe' or 'subscription' in incoming_msg:
+        print(f"DEBUG: Processing subscribe command")
         # Clear any ongoing states
         if phone_number in user_sessions:
-            user_sessions[phone_number] = {}  # Reset completely
-            
-        if not user_profile.get('profile_complete'):
-            onboarding_message = start_business_onboarding(phone_number, user_profile)
-            resp.message(onboarding_message)
-        else:
-            resp.message("Hello! Welcome back! Reply '1' for social media marketing ideas, 'status' to check your subscription, or 'profile' to manage your business info.")
-        return str(resp)
-    
-    elif incoming_msg == 'subscribe':
-        print(f"DEBUG: Processing 'subscribe' command")
-        # Clear any ongoing states
-        if phone_number in user_sessions:
-            user_sessions[phone_number] = {}  # Reset completely
+            user_sessions[phone_number] = {}
             
         plan_selection_message = """Great! Choose your monthly social media marketing plan:
 
@@ -925,21 +914,37 @@ Reply with 'Basic', 'Growth', or 'Pro'."""
         resp.message(plan_selection_message)
         return str(resp)
     
+    # Fix for greeting commands
+    elif any(greet in incoming_msg for greet in ['hello', 'hi', 'hey', 'start']):
+        print(f"DEBUG: Processing greeting command")
+        # Clear any ongoing states
+        if phone_number in user_sessions:
+            user_sessions[phone_number] = {}
+            
+        if not user_profile.get('profile_complete'):
+            onboarding_message = start_business_onboarding(phone_number, user_profile)
+            resp.message(onboarding_message)
+        else:
+            resp.message("Hello! Welcome back! Reply '1' for social media marketing ideas, 'status' to check your subscription, or 'profile' to manage your business info.")
+        return str(resp)
+    
+    # Fix for profile command
     elif incoming_msg == 'profile':
         print(f"DEBUG: Processing 'profile' command")
         # Clear any ongoing states
         if phone_number in user_sessions:
-            user_sessions[phone_number] = {}  # Reset completely
+            user_sessions[phone_number] = {}
             
         profile_message = start_profile_management(phone_number, user_profile)
         resp.message(profile_message)
         return str(resp)
     
+    # Fix for help command
     elif incoming_msg == 'help':
         print(f"DEBUG: Processing 'help' command")
         # Clear any ongoing states
         if phone_number in user_sessions:
-            user_sessions[phone_number] = {}  # Reset completely
+            user_sessions[phone_number] = {}
             
         resp.message("""🤖 JengaBI user HELP:
 
@@ -1048,7 +1053,7 @@ I help African businesses create effective social media marketing!""")
         return str(resp)
     
     # FREE FIRST EXPERIENCE for new users
-    if user_profile.get('message_count', 0) == 0 and (incoming_msg in ['hello', 'start', 'hi']):
+    if user_profile.get('message_count', 0) == 0 and any(greet in incoming_msg for greet in ['hello', 'start', 'hi']):
         onboarding_message = start_business_onboarding(phone_number, user_profile)
         resp.message(onboarding_message)
         return str(resp)
