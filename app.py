@@ -780,10 +780,11 @@ def get_full_profile_summary(user_profile):
 @app.route('/webhook', methods=['POST'])
 def webhook():
     print(f"Raw request values: {dict(request.values)}")
-    incoming_msg = request.values.get('Body', '').lower()
+    incoming_msg = request.values.get('Body', '').strip().lower()
     phone_number = request.values.get('From', '')
     
     print(f"DEBUG: Received message '{incoming_msg}' from {phone_number}")
+    print(f"DEBUG: Current session state: {user_sessions.get(phone_number, {})}")
     
     resp = MessagingResponse()
     user_profile = get_or_create_profile(phone_number)
@@ -792,8 +793,23 @@ def webhook():
         resp.message("Sorry, we're experiencing technical difficulties. Please try again later.")
         return str(resp)
 
-    # ✅ PRIORITY: Handle main commands FIRST (these should always work regardless of state)
-    if incoming_msg.strip() == '1':
+    # ✅ FIRST: Handle escape commands that should reset everything
+    escape_commands = ['exit', 'cancel', 'back', 'stop', 'quit', 'main menu', 'menu']
+    if incoming_msg in escape_commands:
+        print(f"DEBUG: Processing escape command '{incoming_msg}'")
+        # Completely reset the user session
+        if phone_number in user_sessions:
+            user_sessions[phone_number] = {}
+        resp.message("🔄 Session reset. How can I help you? Reply '1' for ideas, 'status' for subscription, or 'help' for options.")
+        return str(resp)
+
+    # ✅ SECOND: Handle main commands that should work regardless of state
+    if incoming_msg == '1':
+        print(f"DEBUG: Processing '1' command")
+        # Clear any ongoing states
+        if phone_number in user_sessions:
+            user_sessions[phone_number] = {}  # Reset completely
+        
         if not check_subscription(user_profile['id']):
             resp.message("You need a subscription to generate ideas. Reply 'subscribe' to choose a plan.")
             return str(resp)
@@ -803,64 +819,33 @@ def webhook():
             resp.message("You've used all your available messages for this period. Reply 'status' to check your subscription.")
             return str(resp)
         
-        # Clear any ongoing states when starting fresh product selection
-        if phone_number in user_sessions:
-            user_sessions[phone_number]['awaiting_product_selection'] = False
-            user_sessions[phone_number]['awaiting_custom_product'] = False
-        
         product_message = start_product_selection(phone_number, user_profile)
         resp.message(product_message)
         return str(resp)
     
-    elif 'hello' in incoming_msg or 'hi' in incoming_msg or 'start' in incoming_msg:
+    elif incoming_msg == 'status':
+        print(f"DEBUG: Processing 'status' command")
         # Clear any ongoing states
         if phone_number in user_sessions:
-            user_sessions[phone_number]['onboarding'] = False
-            user_sessions[phone_number]['awaiting_product_selection'] = False
-            user_sessions[phone_number]['awaiting_custom_product'] = False
-            user_sessions[phone_number]['adding_products'] = False
-            user_sessions[phone_number]['managing_profile'] = False
-            
-        if not user_profile.get('profile_complete'):
-            onboarding_message = start_business_onboarding(phone_number, user_profile)
-            resp.message(onboarding_message)
-        else:
-            resp.message("Hello! Welcome back! Reply '1' for social media marketing ideas, 'status' to check your subscription, or 'profile' to manage your business info.")
-        return str(resp)
-    
-    elif 'status' in incoming_msg:
-        # Clear any ongoing states
-        if phone_number in user_sessions:
-            user_sessions[phone_number]['onboarding'] = False
-            user_sessions[phone_number]['awaiting_product_selection'] = False
-            user_sessions[phone_number]['awaiting_custom_product'] = False
-            user_sessions[phone_number]['adding_products'] = False
-            user_sessions[phone_number]['managing_profile'] = False
+            user_sessions[phone_number] = {}  # Reset completely
             
         try:
-            # Check subscription with better error handling
             has_subscription = check_subscription(user_profile['id'])
             
             if has_subscription:
-                # User HAS a subscription
                 plan_info = get_user_plan_info(user_profile['id'])
                 
                 print(f"DEBUG: plan_info = {plan_info}, has_subscription = {has_subscription}")
                 
-                # Safely handle plan_info
                 if plan_info and isinstance(plan_info, dict):
                     plan_type = plan_info.get('plan_type', 'unknown')
                     output_type = plan_info.get('output_type', 'ideas')
-                    
-                    print(f"DEBUG: plan_type = {plan_type}, output_type = {output_type}")
-                    
                 else:
                     plan_type = 'unknown'
                     output_type = 'ideas'
                 
                 remaining = get_remaining_messages(user_profile['id'])
                 
-                # Build status message for subscribed users
                 if plan_type in PLANS:
                     status_message = f"""📊 YOUR SUBSCRIPTION STATUS:
 
@@ -875,7 +860,6 @@ Remaining: {remaining} messages
 
 💡 Reply '1' to generate social media marketing content"""
                 else:
-                    # Fallback for cases where plan_type exists but isn't in PLANS dict
                     display_plan_type = plan_type.upper() if plan_type and plan_type != 'unknown' else 'Active Subscription'
                     status_message = f"""📊 YOUR SUBSCRIPTION STATUS:
 
@@ -889,10 +873,8 @@ Remaining: {remaining} messages
 💡 Reply '1' to generate social media marketing content"""
             
             else:
-                # User has NO subscription
                 status_message = "You don't have an active subscription. Reply 'subscribe' to choose a plan!"
             
-            # Send the message
             resp.message(status_message)
             
         except Exception as e:
@@ -901,14 +883,24 @@ Remaining: {remaining} messages
         
         return str(resp)
 
-    elif 'subscribe' in incoming_msg:
+    elif incoming_msg == 'hello' or incoming_msg == 'hi' or incoming_msg == 'start':
+        print(f"DEBUG: Processing greeting command")
         # Clear any ongoing states
         if phone_number in user_sessions:
-            user_sessions[phone_number]['onboarding'] = False
-            user_sessions[phone_number]['awaiting_product_selection'] = False
-            user_sessions[phone_number]['awaiting_custom_product'] = False
-            user_sessions[phone_number]['adding_products'] = False
-            user_sessions[phone_number]['managing_profile'] = False
+            user_sessions[phone_number] = {}  # Reset completely
+            
+        if not user_profile.get('profile_complete'):
+            onboarding_message = start_business_onboarding(phone_number, user_profile)
+            resp.message(onboarding_message)
+        else:
+            resp.message("Hello! Welcome back! Reply '1' for social media marketing ideas, 'status' to check your subscription, or 'profile' to manage your business info.")
+        return str(resp)
+    
+    elif incoming_msg == 'subscribe':
+        print(f"DEBUG: Processing 'subscribe' command")
+        # Clear any ongoing states
+        if phone_number in user_sessions:
+            user_sessions[phone_number] = {}  # Reset completely
             
         plan_selection_message = """Great! Choose your monthly social media marketing plan:
 
@@ -929,33 +921,25 @@ Remaining: {remaining} messages
 
 Reply with 'Basic', 'Growth', or 'Pro'."""
         
-        if phone_number not in user_sessions:
-            user_sessions[phone_number] = {}
-        user_sessions[phone_number]['state'] = 'awaiting_plan_selection'
+        user_sessions[phone_number] = {'state': 'awaiting_plan_selection'}
         resp.message(plan_selection_message)
         return str(resp)
     
-    elif 'profile' in incoming_msg:
+    elif incoming_msg == 'profile':
+        print(f"DEBUG: Processing 'profile' command")
         # Clear any ongoing states
         if phone_number in user_sessions:
-            user_sessions[phone_number]['onboarding'] = False
-            user_sessions[phone_number]['awaiting_product_selection'] = False
-            user_sessions[phone_number]['awaiting_custom_product'] = False
-            user_sessions[phone_number]['adding_products'] = False
+            user_sessions[phone_number] = {}  # Reset completely
             
-        # Start profile management
         profile_message = start_profile_management(phone_number, user_profile)
         resp.message(profile_message)
         return str(resp)
     
-    elif 'help' in incoming_msg:
+    elif incoming_msg == 'help':
+        print(f"DEBUG: Processing 'help' command")
         # Clear any ongoing states
         if phone_number in user_sessions:
-            user_sessions[phone_number]['onboarding'] = False
-            user_sessions[phone_number]['awaiting_product_selection'] = False
-            user_sessions[phone_number]['awaiting_custom_product'] = False
-            user_sessions[phone_number]['adding_products'] = False
-            user_sessions[phone_number]['managing_profile'] = False
+            user_sessions[phone_number] = {}  # Reset completely
             
         resp.message("""🤖 JengaBI user HELP:
 
@@ -964,49 +948,41 @@ Reply with 'Basic', 'Growth', or 'Pro'."""
 • 'subscribe' - Choose a plan
 • 'profile' - Manage your business profile
 • 'hello' - Start over
+• 'exit' or 'cancel' - Reset current session
 
 I help African businesses create effective social media marketing!""")
         return str(resp)
-        
-    # ✅ PRIORITY COMMANDS CHECK - Clear any ongoing flows for other priority commands
-    priority_commands = ['exit', 'cancel', 'back', 'stop']
-    if incoming_msg.strip() in priority_commands:
-        if phone_number in user_sessions:
-            user_sessions[phone_number]['onboarding'] = False
-            user_sessions[phone_number]['awaiting_product_selection'] = False
-            user_sessions[phone_number]['awaiting_custom_product'] = False
-            user_sessions[phone_number]['adding_products'] = False
-            user_sessions[phone_number]['managing_profile'] = False
-        resp.message("Okay, let's start over. How can I help you? Reply '1' for ideas, 'status' for subscription, or 'help' for options.")
-        return str(resp)
-    
-    # ✅ NOW handle ongoing flows (these only run if no main command was matched)
+
+    # ✅ THIRD: Now handle ongoing session states (only if no main command was processed)
     
     # Handle profile management flow
     if user_sessions.get(phone_number, {}).get('managing_profile'):
+        print(f"DEBUG: Handling profile management")
         profile_complete, response_message = handle_profile_management(phone_number, incoming_msg, user_profile)
         resp.message(response_message)
         return str(resp)
     
     # Handle users adding products
     if user_sessions.get(phone_number, {}).get('adding_products'):
+        print(f"DEBUG: Handling product addition")
         response = handle_user_without_products(phone_number, user_profile, incoming_msg)
         resp.message(response)
         return str(resp)
     
     # Handle onboarding flow
     if user_sessions.get(phone_number, {}).get('onboarding'):
+        print(f"DEBUG: Handling onboarding")
         onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
         resp.message(response_message)
         return str(resp)
     
     # Handle custom product input
     if user_sessions.get(phone_number, {}).get('awaiting_custom_product'):
+        print(f"DEBUG: Handling custom product input")
         user_sessions[phone_number]['custom_product'] = incoming_msg
         user_sessions[phone_number]['awaiting_custom_product'] = False
         products = [incoming_msg]
         
-        # Get user's plan type to determine output type
         plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
         output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
         
@@ -1015,11 +991,11 @@ I help African businesses create effective social media marketing!""")
         update_message_usage(user_profile['id'])
         return str(resp)
     
-    # Handle product selection (ONLY if no main command was processed)
+    # Handle product selection
     if user_sessions.get(phone_number, {}).get('awaiting_product_selection'):
-        print(f"DEBUG: Processing product selection for '{incoming_msg}'")
+        print(f"DEBUG: Handling product selection for '{incoming_msg}'")
         selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
-        print(f"DEBUG: Selected products: {selected_products}, Error: {error_message}")
+        print(f"DEBUG: handle_product_selection returned: selected_products={selected_products}, error_message={error_message}")
         
         if error_message:
             resp.message(error_message)
@@ -1027,7 +1003,6 @@ I help African businesses create effective social media marketing!""")
         if selected_products:
             user_sessions[phone_number]['awaiting_product_selection'] = False
             
-            # Get user's plan type to determine output type
             plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
             output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
             
@@ -1039,11 +1014,12 @@ I help African businesses create effective social media marketing!""")
             # If no products selected and no error message, show the product selection menu again
             print(f"DEBUG: No products selected, showing menu again")
             product_message = start_product_selection(phone_number, user_profile)
-            resp.message(f"❌ Please select valid product numbers.\n\n{product_message}")
+            resp.message(f"❌ Please select valid product numbers (e.g., 1,3,5).\n\n{product_message}")
             return str(resp)
     
     # Handle plan selection
     if user_sessions.get(phone_number, {}).get('state') == 'awaiting_plan_selection':
+        print(f"DEBUG: Handling plan selection")
         if 'basic' in incoming_msg:
             selected_plan = 'basic'
         elif 'growth' in incoming_msg:
@@ -1064,7 +1040,7 @@ I help African businesses create effective social media marketing!""")
     # ✅ Check for existing users without products
     if (user_profile.get('profile_complete') and 
         (not user_profile.get('business_products') or len(user_profile.get('business_products', [])) == 0) and
-        incoming_msg.strip() == '1' and
+        incoming_msg == '1' and
         not user_sessions.get(phone_number, {}).get('adding_products')):
         
         response = handle_user_without_products(phone_number, user_profile, incoming_msg)
@@ -1072,17 +1048,15 @@ I help African businesses create effective social media marketing!""")
         return str(resp)
     
     # FREE FIRST EXPERIENCE for new users
-    if user_profile.get('message_count', 0) == 0 and ('hello' in incoming_msg or 'start' in incoming_msg or 'hi' in incoming_msg):
+    if user_profile.get('message_count', 0) == 0 and (incoming_msg in ['hello', 'start', 'hi']):
         onboarding_message = start_business_onboarding(phone_number, user_profile)
         resp.message(onboarding_message)
         return str(resp)
     
-    else:
-        # Always respond intelligently
-        intelligent_response = get_intelligent_response(incoming_msg, user_profile)
-        resp.message(intelligent_response)
-        return str(resp)
-    
+    # FINAL fallback - intelligent response
+    print(f"DEBUG: No command matched, sending intelligent response")
+    intelligent_response = get_intelligent_response(incoming_msg, user_profile)
+    resp.message(intelligent_response)
     return str(resp)
 
 if __name__ == '__main__':
