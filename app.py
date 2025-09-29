@@ -910,10 +910,15 @@ def webhook():
                 # User HAS a subscription
                 plan_info = get_user_plan_info(user_profile['id'])
                 
+                print(f"DEBUG: plan_info = {plan_info}, has_subscription = {has_subscription}")
+                
                 # Safely handle plan_info
                 if plan_info and isinstance(plan_info, dict):
                     plan_type = plan_info.get('plan_type', 'unknown')
                     output_type = plan_info.get('output_type', 'ideas')
+                    
+                    print(f"DEBUG: plan_type = {plan_type}, output_type = {output_type}")
+                    
                 else:
                     plan_type = 'unknown'
                     output_type = 'ideas'
