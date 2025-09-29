@@ -137,9 +137,9 @@ def handle_onboarding_response(phone_number, incoming_msg, user_profile):
         {"question": "What type of business? (e.g., restaurant, salon, retail)", "field": "business_type"},
         {"question": "Where are you located? (e.g., Nairobi, CBD)", "field": "business_location"},
         {"question": "What's your business phone number?", "field": "business_phone"},
-        {"question": "What are your main products/services? (comma separated)", "field": "business_products"},
-        {"question": "What are your main marketing goals?", "field": "business_marketing_goals"},
-        {"question": "Do you have a website or social media? (optional)", "field": "website"}
+        {"question": "What are your main products/services? (comma separated)", "field": 'business_products'},
+        {"question": "What are your main marketing goals?", "field": 'business_marketing_goals'},
+        {"question": "Do you have a website or social media? (optional)", "field": 'website'}
     ]
     
     # Save current step response
@@ -374,10 +374,16 @@ def get_user_plan_info(profile_id):
         response = supabase.table('subscriptions').select('plan_type').eq('profile_id', profile_id).eq('is_active', True).execute()
         if response.data:
             plan_data = response.data[0]
+            # Ensure plan_type is properly formatted
+            plan_type = plan_data.get('plan_type', '').lower()
+            plan_data['plan_type'] = plan_type
+            
             # Add output_type based on plan_type
-            plan_type = plan_data.get('plan_type')
             if plan_type in PLANS:
                 plan_data['output_type'] = PLANS[plan_type]['output_type']
+            else:
+                # Default fallback
+                plan_data['output_type'] = 'ideas'
             return plan_data
         return None
     except Exception as e:
@@ -929,10 +935,13 @@ Remaining: {remaining} messages
 
 💡 Reply '1' to generate social media marketing content"""
                 else:
+                    # Fallback for cases where plan_type exists but isn't in PLANS dict
+                    display_plan_type = plan_type.upper() if plan_type and plan_type != 'unknown' else 'Active Subscription'
                     status_message = f"""📊 YOUR SUBSCRIPTION STATUS:
 
-Plan: Active Subscription
+Plan: {display_plan_type}
 Content Type: {output_type.replace('_', ' ').title()}
+
 📈 USAGE THIS MONTH:
 Used: {user_profile.get('used_messages', 0)} messages
 Remaining: {remaining} messages
