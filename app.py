@@ -822,6 +822,12 @@ def webhook():
         if phone_number in user_sessions:
             user_sessions[phone_number] = {}
         
+        # Check if user needs onboarding first
+        if not user_profile.get('profile_complete'):
+            onboarding_message = start_business_onboarding(phone_number, user_profile)
+            resp.message(onboarding_message)
+            return str(resp)
+        
         if not check_subscription(user_profile['id']):
             resp.message("You need a subscription to generate ideas. Reply 'subscribe' to choose a plan.")
             return str(resp)
@@ -844,6 +850,12 @@ def webhook():
         # Clear any ongoing states
         if phone_number in user_sessions:
             user_sessions[phone_number] = {}
+            
+        # Check if user needs onboarding first
+        if not user_profile.get('profile_complete'):
+            onboarding_message = start_business_onboarding(phone_number, user_profile)
+            resp.message(onboarding_message)
+            return str(resp)
             
         try:
             has_subscription = check_subscription(user_profile['id'])
@@ -911,6 +923,12 @@ Remaining: {remaining} messages
         if phone_number in user_sessions:
             user_sessions[phone_number] = {}
             
+        # Check if user needs onboarding first
+        if not user_profile.get('profile_complete'):
+            onboarding_message = start_business_onboarding(phone_number, user_profile)
+            resp.message(onboarding_message)
+            return str(resp)
+            
         plan_selection_message = """Great! Choose your monthly social media marketing plan:
 
 🎯 BASIC - KSh 130/month
@@ -934,13 +952,14 @@ Reply with 'Basic', 'Growth', or 'Pro'."""
         resp.message(plan_selection_message)
         return str(resp)
     
-    # Fix for greeting commands
+    # Fix for greeting commands AND handle new users
     elif any(greet in incoming_msg for greet in ['hello', 'hi', 'hey', 'start']):
         print(f"DEBUG: Processing greeting command")
         # Clear any ongoing states
         if phone_number in user_sessions:
             user_sessions[phone_number] = {}
             
+        # Check if user needs onboarding (new user or incomplete profile)
         if not user_profile.get('profile_complete'):
             onboarding_message = start_business_onboarding(phone_number, user_profile)
             resp.message(onboarding_message)
@@ -955,6 +974,12 @@ Reply with 'Basic', 'Growth', or 'Pro'."""
         if phone_number in user_sessions:
             user_sessions[phone_number] = {}
             
+        # Check if user needs onboarding first
+        if not user_profile.get('profile_complete'):
+            onboarding_message = start_business_onboarding(phone_number, user_profile)
+            resp.message(onboarding_message)
+            return str(resp)
+            
         profile_message = start_profile_management(phone_number, user_profile)
         resp.message(profile_message)
         return str(resp)
@@ -966,6 +991,12 @@ Reply with 'Basic', 'Growth', or 'Pro'."""
         if phone_number in user_sessions:
             user_sessions[phone_number] = {}
             
+        # Check if user needs onboarding first
+        if not user_profile.get('profile_complete'):
+            onboarding_message = start_business_onboarding(phone_number, user_profile)
+            resp.message(onboarding_message)
+            return str(resp)
+            
         resp.message("""🤖 JengaBI user HELP:
 
 • '1' - Generate social media marketing content
@@ -976,6 +1007,18 @@ Reply with 'Basic', 'Growth', or 'Pro'."""
 • 'exit' or 'cancel' - Reset current session
 
 I help African businesses create effective social media marketing!""")
+        return str(resp)
+
+    # NEW: Handle new users who don't have complete profiles (catch-all for first-time users)
+    elif not user_profile.get('profile_complete'):
+        print(f"DEBUG: New/incomplete profile detected, starting onboarding")
+        # Clear any ongoing states
+        if phone_number in user_sessions:
+            user_sessions[phone_number] = {}
+            
+        # Start onboarding for new users
+        onboarding_message = start_business_onboarding(phone_number, user_profile)
+        resp.message(onboarding_message)
         return str(resp)
 
     # ✅ THIRD: Now handle ongoing session states (only if no main command was processed)
