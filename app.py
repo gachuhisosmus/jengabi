@@ -125,18 +125,32 @@ def start_business_onboarding(phone_number, user_profile):
         'business_data': {}
     })
     
-    return "What's your business name?"
+    print(f"DEBUG: Onboarding started for {phone_number}, step: 0")
+    
+    # Polite introduction before asking first question
+    return """📋 BUSINESS PROFILE SETUP
+
+I notice your business profile isn't complete yet. To give you the best social media marketing ideas, I need to know a bit more about your business.
+
+Let's get you set up! This will only take a moment.
+
+What's your business name?"""
 
 def handle_onboarding_response(phone_number, incoming_msg, user_profile):
     """Handle business profile onboarding steps"""
+    print(f"DEBUG: Handling onboarding response: '{incoming_msg}'")
+    
     # check if user is trying to send a command during onboarding
-    if incoming_msg.strip() in ['1', 'status', 'subscribe', 'help', 'hello', 'profile']:
+    if incoming_msg.strip().lower() in ['1', 'status', 'subscribe', 'help', 'hello', 'profile', 'exit', 'cancel', 'back']:
         # Exit onboarding and process the command
         user_sessions[phone_number]['onboarding'] = False
+        user_sessions[phone_number]['onboarding_step'] = 0
         return True, "I'll process your command. Please wait..."
     
     step = user_sessions[phone_number].get('onboarding_step', 0)
     business_data = user_sessions[phone_number].get('business_data', {})
+    
+    print(f"DEBUG: Current onboarding step: {step}")
     
     steps = [
         {"question": "What's your business name?", "field": "business_name"},
@@ -151,6 +165,8 @@ def handle_onboarding_response(phone_number, incoming_msg, user_profile):
     # Save current step response
     if step > 0:
         previous_field = steps[step-1]["field"]
+        print(f"DEBUG: Saving response for field '{previous_field}': '{incoming_msg}'")
+        
         if previous_field == 'business_products':
             # Convert comma-separated products to array
             business_data[previous_field] = [p.strip() for p in incoming_msg.split(',') if p.strip()]
@@ -159,12 +175,16 @@ def handle_onboarding_response(phone_number, incoming_msg, user_profile):
     
     # Check if onboarding complete
     if step >= len(steps):
+        print(f"DEBUG: Onboarding complete, saving profile data")
         # Save all business data to database
         try:
-            supabase.table('profiles').update({
+            update_data = {
                 **business_data,
                 'profile_complete': True
-            }).eq('id', user_profile['id']).execute()
+            }
+            print(f"DEBUG: Saving to database: {update_data}")
+            
+            supabase.table('profiles').update(update_data).eq('id', user_profile['id']).execute()
         except Exception as e:
             print(f"Error saving business data: {e}")
         
@@ -184,7 +204,10 @@ Reply '1' to generate social media marketing ideas or 'subscribe' to choose a pl
     user_sessions[phone_number]['onboarding_step'] = step + 1
     user_sessions[phone_number]['business_data'] = business_data
     
-    return False, steps[step]["question"]
+    next_question = steps[step]["question"]
+    print(f"DEBUG: Asking next question: {next_question}")
+    
+    return False, next_question
 
 def start_product_selection(phone_number, user_profile):
     # Initialize a session for the user if it doesn't exist
@@ -953,19 +976,21 @@ Reply with 'Basic', 'Growth', or 'Pro'."""
         return str(resp)
     
     # Fix for greeting commands AND handle new users
-    elif any(greet in incoming_msg for greet in ['hello', 'hi', 'hey', 'start']):
-        print(f"DEBUG: Processing greeting command")
+    elif any(greet in incoming_msg for greet in ['hello', 'hi', 'hey', 'start', 'h']):
+        print(f"DEBUG: Processing greeting command - '{incoming_msg}'")
         # Clear any ongoing states
         if phone_number in user_sessions:
             user_sessions[phone_number] = {}
             
         # Check if user needs onboarding (new user or incomplete profile)
         if not user_profile.get('profile_complete'):
+            print(f"DEBUG: Starting onboarding for incomplete profile")
             onboarding_message = start_business_onboarding(phone_number, user_profile)
             resp.message(onboarding_message)
+            return str(resp)
         else:
             resp.message("Hello! Welcome back! Reply '1' for social media marketing ideas, 'status' to check your subscription, or 'profile' to manage your business info.")
-        return str(resp)
+            return str(resp)
     
     # Fix for profile command
     elif incoming_msg == 'profile':
@@ -1011,12 +1036,12 @@ I help African businesses create effective social media marketing!""")
 
     # NEW: Handle new users who don't have complete profiles (catch-all for first-time users)
     elif not user_profile.get('profile_complete'):
-        print(f"DEBUG: New/incomplete profile detected, starting onboarding")
+        print(f"DEBUG: New/incomplete profile detected for message '{incoming_msg}', starting onboarding")
         # Clear any ongoing states
         if phone_number in user_sessions:
             user_sessions[phone_number] = {}
             
-        # Start onboarding for new users
+        # Start onboarding for new users with polite introduction
         onboarding_message = start_business_onboarding(phone_number, user_profile)
         resp.message(onboarding_message)
         return str(resp)
@@ -1039,9 +1064,10 @@ I help African businesses create effective social media marketing!""")
     
     # Handle onboarding flow
     if user_sessions.get(phone_number, {}).get('onboarding'):
-        print(f"DEBUG: Handling onboarding")
+        print(f"DEBUG: Handling onboarding - step: {user_sessions[phone_number].get('onboarding_step', 0)}")
         onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
         resp.message(response_message)
+        print(f"DEBUG: Onboarding response: complete={onboarding_complete}, message='{response_message}'")
         return str(resp)
     
     # Handle custom product input
