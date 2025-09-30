@@ -38,19 +38,25 @@ PLANS = {
         'price': 130,
         'description': '5 social media ideas per week',
         'keyword': 'basic',
-        'output_type': 'ideas'
+        'output_type': 'ideas',
+        'max_messages': 20,  # 5 ideas/week × 4 weeks = 20/month
+        'message_preference': 1
     },
     'growth': {
         'price': 249,
         'description': '15 ideas + weekly content strategy',
         'keyword': 'growth',
-        'output_type': 'ideas_strategy'
+        'output_type': 'ideas_strategy',
+        'max_messages': 60,  # 15 ideas/week × 4 weeks = 60/month
+        'message_preference': 3
     },
     'pro': {
         'price': 599,
         'description': 'Unlimited ideas + full marketing strategies',
         'keyword': 'pro',
-        'output_type': 'strategies'
+        'output_type': 'strategies',
+        'max_messages': 9999,  # Essentially unlimited
+        'message_preference': 5
     }
 }
 
@@ -81,9 +87,9 @@ def get_or_create_profile(phone_number):
             if user_data.get('used_messages') is None:
                 user_data['used_messages'] = 0
             if user_data.get('max_messages') is None:
-                user_data['max_messages'] = 20  # Default for basic plan
+                user_data['max_messages'] = PLANS['basic']['max_messages']  # Default for basic plan
             if user_data.get('message_preference') is None:
-                user_data['message_preference'] = 3  # Default 3 ideas
+                user_data['message_preference'] = PLANS['basic']['message_preference']  # Default from basic plan
             if user_data.get('business_products') is None:
                 user_data['business_products'] = []
                 
@@ -96,8 +102,8 @@ def get_or_create_profile(phone_number):
                 "message_count": 0,
                 "profile_complete": False,
                 "used_messages": 0,
-                "max_messages": 20,
-                "message_preference": 3,
+                "max_messages": PLANS['basic']['max_messages'],  # Default to basic plan limits
+                "message_preference": PLANS['basic']['message_preference'],  # Default from basic plan
                 "business_products": []
             }).execute()
             print(f"New user created: {new_profile.data[0]}")
@@ -426,12 +432,18 @@ def get_remaining_messages(profile_id):
         if response.data:
             data = response.data[0]
             used = data.get('used_messages', 0)
-            max_msgs = data.get('max_messages', 20)
+            max_msgs = data.get('max_messages', PLANS['basic']['max_messages'])
+            
+            # For PRO plan, always show high remaining count
+            plan_info = get_user_plan_info(profile_id)
+            if plan_info and plan_info.get('plan_type') == 'pro':
+                return 9999  # Show "unlimited" for PRO users
+            
             return max(0, max_msgs - used)
-        return 15  # Fallback
+        return PLANS['basic']['max_messages']  # Fallback
     except Exception as e:
         print(f"Error getting remaining messages: {e}")
-        return 15
+        return PLANS['basic']['max_messages']
 
 def handle_user_without_products(phone_number, user_profile, incoming_msg):
     """Handle existing users who don't have products saved"""
@@ -814,10 +826,13 @@ def webhook():
             resp.message("You need a subscription to generate ideas. Reply 'subscribe' to choose a plan.")
             return str(resp)
         
-        remaining = get_remaining_messages(user_profile['id'])
-        if remaining <= 0:
-            resp.message("You've used all your available messages for this period. Reply 'status' to check your subscription.")
-            return str(resp)
+        # Check message limits (skip for PRO users)
+        plan_info = get_user_plan_info(user_profile['id'])
+        if plan_info and plan_info.get('plan_type') != 'pro':
+            remaining = get_remaining_messages(user_profile['id'])
+            if remaining <= 0:
+                resp.message("You've used all your available messages for this period. Reply 'status' to check your subscription.")
+                return str(resp)
         
         product_message = start_product_selection(phone_number, user_profile)
         resp.message(product_message)
@@ -846,8 +861,14 @@ def webhook():
                     output_type = 'ideas'
                 
                 remaining = get_remaining_messages(user_profile['id'])
+                used_messages = user_profile.get('used_messages', 0)
                 
                 if plan_type in PLANS:
+                    if plan_type == 'pro':
+                        usage_text = "Unlimited messages"
+                    else:
+                        usage_text = f"Used: {used_messages} messages\nRemaining: {remaining} messages"
+                    
                     status_message = f"""📊 YOUR SUBSCRIPTION STATUS:
 
 Plan: {plan_type.upper()} Package
@@ -856,8 +877,7 @@ Benefits: {PLANS[plan_type]['description']}
 Content Type: {output_type.replace('_', ' ').title()}
 
 📈 USAGE THIS MONTH:
-Used: {user_profile.get('used_messages', 0)} messages
-Remaining: {remaining} messages
+{usage_text}
 
 💡 Reply '1' to generate social media marketing content"""
                 else:
@@ -868,7 +888,7 @@ Plan: {display_plan_type}
 Content Type: {output_type.replace('_', ' ').title()}
 
 📈 USAGE THIS MONTH:
-Used: {user_profile.get('used_messages', 0)} messages
+Used: {used_messages} messages
 Remaining: {remaining} messages
 
 💡 Reply '1' to generate social media marketing content"""
@@ -1037,6 +1057,35 @@ I help African businesses create effective social media marketing!""")
         
         user_sessions[phone_number]['state'] = None
         plan_data = PLANS[selected_plan]
+        
+        # Update user's message limits based on selected plan
+        try:
+            supabase.table('profiles').update({
+                'max_messages': plan_data['max_messages'],
+                'message_preference': plan_data['message_preference']
+            }).eq('phone_number', phone_number).execute()
+            
+            # Create or update subscription
+            subscription_data = {
+                'profile_id': user_profile['id'],
+                'plan_type': selected_plan,
+                'is_active': True,
+                'price': plan_data['price'],
+                'max_messages': plan_data['max_messages']
+            }
+            
+            # Check if subscription exists
+            existing_sub = supabase.table('subscriptions').select('*').eq('profile_id', user_profile['id']).execute()
+            if existing_sub.data:
+                # Update existing subscription
+                supabase.table('subscriptions').update(subscription_data).eq('profile_id', user_profile['id']).execute()
+            else:
+                # Create new subscription
+                supabase.table('subscriptions').insert(subscription_data).execute()
+                
+        except Exception as e:
+            print(f"Error updating plan limits: {e}")
+        
         payment_message = f"Excellent choice! To activate your *{selected_plan.capitalize()} Plan*, please send KSh {plan_data['price']} to PayBill XXXX Acc: {phone_number}.\n\nThen, forward the M-Pesa confirmation message to me."
         user_sessions[phone_number]['selected_plan'] = selected_plan
         resp.message(payment_message)
