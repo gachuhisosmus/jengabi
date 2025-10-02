@@ -123,11 +123,21 @@ def start_business_onboarding(phone_number, user_profile):
 
 def handle_onboarding_response(phone_number, incoming_msg, user_profile):
     """Handle business profile onboarding steps"""
-    # check if user is trying to send a command during onboarding
-    if incoming_msg.strip() in ['1', 'status', 'subscribe', 'help', 'hello', 'profile']:
-        # Exit onboarding and process the command
+    # Allow only 'help' command during onboarding
+    if incoming_msg.strip() == 'help':
+        return False, """🆘 ONBOARDING HELP:
+        
+I'm helping you set up your business profile. Please answer the questions to continue.
+
+Current questions will help me create better marketing content for your business.
+
+You can also reply 'cancel' to stop onboarding."""
+    
+    # Check if user wants to cancel onboarding
+    if incoming_msg.strip() == 'cancel':
         user_sessions[phone_number]['onboarding'] = False
-        return True, "I'll process your command. Please wait..."
+        user_sessions[phone_number]['onboarding_step'] = 0
+        return True, "Onboarding cancelled. Reply 'hello' to start again when you're ready."
     
     step = user_sessions[phone_number].get('onboarding_step', 0)
     business_data = user_sessions[phone_number].get('business_data', {})
@@ -169,9 +179,9 @@ def handle_onboarding_response(phone_number, incoming_msg, user_profile):
         return True, """
 ✅ PROFILE COMPLETE! Welcome to JENGABI your business marketing assistance. 
 
-Now I can create personalized social media marketing ideas for your business!
+Now I can create personalized social media marketing content for your business!
 
-Reply '1' to generate social media marketing ideas or 'subscribe' to choose a plan.
+Reply 'ideas' to generate social media marketing ideas, 'strat' for strategies, or 'subscribe' to choose a plan.
 """
     
     # Ask next question
@@ -352,11 +362,11 @@ def get_intelligent_response(incoming_msg, user_profile):
     # Business-aware responses
     business_questions = ['how', 'what', 'when', 'where', 'why', 'can i', 'should i', 'advice']
     if any(q in incoming_msg for q in business_questions) and business_context:
-        return f"I'll help you with that{business_context}! Reply '1' for specific social media marketing ideas or ask me anything about your business."
+        return f"I'll help you with that{business_context}! Reply 'ideas' for social media marketing ideas, 'strat' for strategies, or ask me anything about your business."
     
     # Default helpful response
-    help_options = "Reply '1' for social media marketing ideas, 'status' for subscription info, 'profile' to manage your business info, or 'help' for more options."
-    return f"I'm here to help your{business_context} business with social media marketing ideas! {help_options}"
+    help_options = "Reply 'ideas' for social media marketing ideas, 'strat' for strategies, 'status' for subscription info, 'profile' to manage your business info, or 'help' for more options."
+    return f"I'm here to help your{business_context} business with social media marketing! {help_options}"
 
 def check_subscription(profile_id):
     """Checks if the user has an active subscription."""
@@ -545,7 +555,7 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
         elif incoming_msg == '9':
             # Exit profile management
             user_sessions[phone_number]['managing_profile'] = False
-            return True, "Returning to main menu. Reply '1' for ideas, 'status' for subscription, or 'help' for options."
+            return True, "Returning to main menu. Reply 'ideas' for ideas, 'strat' for strategies, 'status' for subscription, or 'help' for options."
         
         else:
             return False, "Please choose a valid option (1-9):"
@@ -770,9 +780,37 @@ def webhook():
     if not user_profile:
         resp.message("Sorry, we're experiencing technical difficulties. Please try again later.")
         return str(resp)
+    
+    # ✅ ENFORCE PROFILE COMPLETION - Check if profile is incomplete
+    if not user_profile.get('profile_complete'):
+        # If user is already in onboarding, continue with onboarding
+        if user_sessions.get(phone_number, {}).get('onboarding'):
+            onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
+            resp.message(response_message)
+            return str(resp)
         
-    # ✅ PRIORITY COMMANDS CHECK - Clear any ongoing flows
-    priority_commands = ['1', 'status', 'subscribe', 'help', 'exit', 'cancel', 'profile']
+        # If user sends 'help' during incomplete profile, provide onboarding help
+        if incoming_msg.strip() == 'help':
+            resp.message("""🆘 PROFILE SETUP HELP:
+            
+I need to know about your business first to create personalized marketing content.
+
+Let's set up your business profile with a few quick questions.
+
+Reply with your answers to complete your profile setup.""")
+            return str(resp)
+        
+        # For ANY other command/message when profile is incomplete, start onboarding
+        onboarding_message = start_business_onboarding(phone_number, user_profile)
+        resp.message(f"""👋 Welcome to JengaBIBOT!
+
+I need to know about your business first to create personalized marketing content.
+
+{onboarding_message}""")
+        return str(resp)
+        
+    # ✅ PRIORITY COMMANDS CHECK - Clear any ongoing flows (only for complete profiles)
+    priority_commands = ['ideas', 'strat', 'status', 'subscribe', 'help', 'exit', 'cancel', 'profile']
     if incoming_msg.strip() in priority_commands:
         if phone_number in user_sessions:
             user_sessions[phone_number]['onboarding'] = False
@@ -793,7 +831,7 @@ def webhook():
         resp.message(response)
         return str(resp)
     
-    # Handle onboarding flow
+    # Handle onboarding flow (should not reach here for incomplete profiles due to above check)
     if user_sessions.get(phone_number, {}).get('onboarding'):
         # Allow users to exit onboarding with commands
         if incoming_msg.strip() in priority_commands:
@@ -828,29 +866,29 @@ def webhook():
         if selected_products:
             user_sessions[phone_number]['awaiting_product_selection'] = False
             
-            # Get user's plan type to determine output type
-            plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
-            output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
+            # Check if we're generating strategies specifically
+            if user_sessions.get(phone_number, {}).get('generating_strategy'):
+                output_type = 'strategies'
+                user_sessions[phone_number]['generating_strategy'] = False  # Clear the flag
+            else:
+                # Get user's plan type to determine output type
+                plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
+                output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
             
             ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
-            resp.message(f"🎯 CONTENT FOR {', '.join(selected_products).upper()}:\n\n{ideas}")
+            content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
+            resp.message(f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:\n\n{ideas}")
             update_message_usage(user_profile['id'])
             return str(resp)
     
     # ✅ Check for existing users without products
     if (user_profile.get('profile_complete') and 
         (not user_profile.get('business_products') or len(user_profile.get('business_products', [])) == 0) and
-        incoming_msg.strip() == '1' and
+        incoming_msg.strip() in ['ideas', 'strat'] and
         not user_sessions.get(phone_number, {}).get('adding_products')):
         
         response = handle_user_without_products(phone_number, user_profile, incoming_msg)
         resp.message(response)
-        return str(resp)
-    
-    # FREE FIRST EXPERIENCE for new users
-    if user_profile.get('message_count', 0) == 0 and ('hello' in incoming_msg or 'start' in incoming_msg or 'hi' in incoming_msg):
-        onboarding_message = start_business_onboarding(phone_number, user_profile)
-        resp.message(onboarding_message)
         return str(resp)
     
     # Handle plan selection
@@ -872,8 +910,8 @@ def webhook():
         resp.message(payment_message)
         return str(resp)
     
-    # Process main commands
-    if incoming_msg.strip() == '1':
+    # Process main commands (only reachable with complete profile)
+    if incoming_msg.strip() == 'ideas':
         if not check_subscription(user_profile['id']):
             resp.message("You need a subscription to generate ideas. Reply 'subscribe' to choose a plan.")
             return str(resp)
@@ -886,13 +924,28 @@ def webhook():
         product_message = start_product_selection(phone_number, user_profile)
         resp.message(product_message)
         return str(resp)
+
+    elif incoming_msg.strip() == 'strat':
+        if not check_subscription(user_profile['id']):
+            resp.message("You need a subscription to generate strategies. Reply 'subscribe' to choose a plan.")
+            return str(resp)
+        
+        remaining = get_remaining_messages(user_profile['id'])
+        if remaining <= 0:
+            resp.message("You've used all your available messages for this period. Reply 'status' to check your subscription.")
+            return str(resp)
+        
+        # For strategies, we'll set a flag to generate strategy content
+        if phone_number not in user_sessions:
+            user_sessions[phone_number] = {}
+        user_sessions[phone_number]['generating_strategy'] = True
+        
+        product_message = start_product_selection(phone_number, user_profile)
+        resp.message(product_message)
+        return str(resp)
     
     elif 'hello' in incoming_msg or 'hi' in incoming_msg or 'start' in incoming_msg:
-        if not user_profile.get('profile_complete'):
-            onboarding_message = start_business_onboarding(phone_number, user_profile)
-            resp.message(onboarding_message)
-        else:
-            resp.message("Hello! Welcome back! Reply '1' for social media marketing ideas, 'status' to check your subscription, or 'profile' to manage your business info.")
+        resp.message("Hello! Welcome back! Reply 'ideas' for social media marketing ideas, 'strat' for strategies, 'status' to check your subscription, or 'profile' to manage your business info.")
         return str(resp)
     
     elif 'status' in incoming_msg:
@@ -927,7 +980,7 @@ Content Type: {output_type.replace('_', ' ').title()}
 Used: {user_profile.get('used_messages', 0)} messages
 Remaining: {remaining} messages
 
-💡 Reply '1' to generate social media marketing content"""
+💡 Reply 'ideas' for social media marketing content"""
                 else:
                     status_message = f"""📊 YOUR SUBSCRIPTION STATUS:
 
@@ -937,7 +990,7 @@ Content Type: {output_type.replace('_', ' ').title()}
 Used: {user_profile.get('used_messages', 0)} messages
 Remaining: {remaining} messages
 
-💡 Reply '1' to generate social media marketing content"""
+💡 Reply 'ideas' for social media marketing content"""
             
             else:
                 # User has NO subscription
@@ -987,7 +1040,8 @@ Reply with 'Basic', 'Growth', or 'Pro'."""
     elif 'help' in incoming_msg:
         resp.message("""🤖 JengaBIBOT HELP:
 
-• '1' - Generate social media marketing content
+• 'ideas' - Generate social media marketing ideas
+• 'strat' - Generate marketing strategies  
 • 'status' - Check subscription  
 • 'subscribe' - Choose a plan
 • 'profile' - Manage your business profile
