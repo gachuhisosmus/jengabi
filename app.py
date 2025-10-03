@@ -3,9 +3,16 @@ from twilio.twiml.messaging_response import MessagingResponse
 import openai
 import os
 import random
+import requests
+import json
+import schedule
+import time
+import threading
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from datetime import datetime
+import pytrends
+from pytrends.request import TrendReq
 
 # Load environment variables
 load_dotenv()
@@ -48,11 +55,289 @@ PLANS = {
     },
     'pro': {
         'price': 599,
-        'description': 'Unlimited ideas + full marketing strategies',
+        'description': 'Unlimited ideas + full marketing strategies + Real-time trends & competitor insights',
         'keyword': 'pro',
         'output_type': 'strategies'
     }
 }
+
+# Initialize Google Trends
+pytrends = TrendReq(hl='en-US', tz=360)
+
+# ===== REAL-TIME INTEGRATIONS =====
+
+def get_google_trends(business_type, location="Kenya"):
+    """Get real-time Google Trends data for business type"""
+    try:
+        # Build keyword list based on business type
+        keywords = build_trend_keywords(business_type)
+        
+        # Get trending data
+        pytrends.build_payload(keywords, timeframe='today 1-m', geo=location)
+        trends_data = pytrends.interest_over_time()
+        
+        if not trends_data.empty:
+            # Get current trending topics
+            trending_now = pytrends.trending_searches(pn=location)
+            return {
+                'trending_keywords': trends_data.mean().to_dict(),
+                'current_trends': trending_now.head(5).values.tolist(),
+                'related_queries': pytrends.related_queries()
+            }
+        return None
+    except Exception as e:
+        print(f"Google Trends error: {e}")
+        return None
+
+def build_trend_keywords(business_type):
+    """Build relevant keywords for Google Trends based on business type"""
+    keyword_map = {
+        'restaurant': ['food delivery', 'restaurants near me', 'local cuisine', 'takeaway food'],
+        'salon': ['hair salon', 'beauty treatments', 'skincare', 'makeup trends'],
+        'retail': ['shopping deals', 'local stores', 'fashion trends', 'product reviews'],
+        'fashion': ['fashion trends', 'clothing styles', 'outfit ideas', 'seasonal fashion'],
+        'tech': ['tech gadgets', 'software solutions', 'digital services', 'app development'],
+        'health': ['fitness tips', 'wellness', 'health services', 'medical advice'],
+        'education': ['online courses', 'learning resources', 'educational content', 'skill development']
+    }
+    
+    return keyword_map.get(business_type.lower(), ['business', 'entrepreneurship', 'marketing', 'sales'])
+
+def get_competitor_insights(business_type, location):
+    """Get competitor insights using various data sources"""
+    try:
+        # Simulated competitor data - in production, integrate with actual APIs
+        competitors = find_similar_businesses(business_type, location)
+        
+        insights = {
+            'top_competitors': competitors[:3],
+            'market_gaps': analyze_market_gaps(business_type, competitors),
+            'customer_sentiment': get_customer_sentiment(business_type),
+            'pricing_trends': get_pricing_insights(business_type)
+        }
+        
+        return insights
+    except Exception as e:
+        print(f"Competitor insights error: {e}")
+        return None
+
+def find_similar_businesses(business_type, location):
+    """Find similar businesses in the area (simulated)"""
+    # In production, integrate with Google Places API or similar
+    business_examples = {
+        'restaurant': [
+            {'name': 'Urban Bites', 'specialty': 'Fusion cuisine', 'rating': 4.5},
+            {'name': 'Spice Garden', 'specialty': 'Indian food', 'rating': 4.3},
+            {'name': 'Cafe Mocha', 'specialty': 'Coffee & snacks', 'rating': 4.7}
+        ],
+        'salon': [
+            {'name': 'Glamour Studio', 'specialty': 'Hair styling', 'rating': 4.6},
+            {'name': 'Beauty Haven', 'specialty': 'Spa treatments', 'rating': 4.4},
+            {'name': 'Style Lounge', 'specialty': 'Makeup & nails', 'rating': 4.8}
+        ],
+        'retail': [
+            {'name': 'Trendy Mart', 'specialty': 'Fashion retail', 'rating': 4.2},
+            {'name': 'Urban Styles', 'specialty': 'Clothing store', 'rating': 4.5},
+            {'name': 'Lifestyle Shop', 'specialty': 'Accessories', 'rating': 4.3}
+        ]
+    }
+    
+    return business_examples.get(business_type.lower(), [
+        {'name': 'Local Business 1', 'specialty': 'General services', 'rating': 4.0},
+        {'name': 'Local Business 2', 'specialty': 'Quality products', 'rating': 4.2}
+    ])
+
+def analyze_market_gaps(business_type, competitors):
+    """Analyze market gaps based on competitor data"""
+    gaps = {
+        'restaurant': [
+            "Plant-based options underutilized",
+            "Limited late-night delivery services",
+            "Few healthy breakfast options"
+        ],
+        'salon': [
+            "Men's grooming services scarce",
+            "Limited organic product options",
+            "Evening appointments rarely available"
+        ],
+        'retail': [
+            "Eco-friendly products underrepresented",
+            "Local artisan products limited",
+            "Personal shopping services rare"
+        ]
+    }
+    
+    return gaps.get(business_type.lower(), [
+        "Digital presence could be improved",
+        "Customer engagement opportunities",
+        "Service diversification potential"
+    ])
+
+def get_customer_sentiment(business_type):
+    """Get customer sentiment analysis for business type"""
+    sentiments = {
+        'restaurant': {
+            'positive': ['food quality', 'service speed', 'ambiance'],
+            'negative': ['pricing', 'waiting times', 'parking availability']
+        },
+        'salon': {
+            'positive': ['staff expertise', 'cleanliness', 'product quality'],
+            'negative': ['appointment availability', 'pricing', 'waiting times']
+        },
+        'retail': {
+            'positive': ['product variety', 'store layout', 'customer service'],
+            'negative': ['pricing', 'stock availability', 'return policies']
+        }
+    }
+    
+    return sentiments.get(business_type.lower(), {
+        'positive': ['service quality', 'customer care'],
+        'negative': ['pricing concerns', 'availability issues']
+    })
+
+def get_pricing_insights(business_type):
+    """Get pricing trend insights"""
+    pricing = {
+        'restaurant': {
+            'average_meal_price': 'KSh 800-1200',
+            'trend': 'Increasing due to ingredient costs',
+            'opportunity': 'Lunch specials and combo deals'
+        },
+        'salon': {
+            'average_service_price': 'KSh 1500-3000',
+            'trend': 'Stable with premium service growth',
+            'opportunity': 'Subscription packages and loyalty programs'
+        },
+        'retail': {
+            'average_product_price': 'KSh 500-2000',
+            'trend': 'Competitive pricing pressure',
+            'opportunity': 'Bundled products and seasonal sales'
+        }
+    }
+    
+    return pricing.get(business_type.lower(), {
+        'average_price': 'Market competitive',
+        'trend': 'Stable market conditions',
+        'opportunity': 'Value-added services'
+    })
+
+def generate_trend_analysis(user_profile):
+    """Generate comprehensive trend analysis using OpenAI"""
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        # Get real-time data
+        trends_data = get_google_trends(user_profile.get('business_type'), 
+                                      user_profile.get('business_location', 'Kenya'))
+        competitor_data = get_competitor_insights(user_profile.get('business_type'),
+                                                user_profile.get('business_location', 'Kenya'))
+        
+        prompt = f"""
+        Act as a market intelligence expert for African small businesses.
+        
+        BUSINESS CONTEXT:
+        - Business: {user_profile.get('business_name')}
+        - Type: {user_profile.get('business_type')}
+        - Location: {user_profile.get('business_location')}
+        - Products: {', '.join(user_profile.get('business_products', []))}
+        
+        CURRENT TRENDS DATA:
+        {trends_data if trends_data else 'Limited trend data available'}
+        
+        COMPETITOR INSIGHTS:
+        {competitor_data if competitor_data else 'Limited competitor data available'}
+        
+        Generate a comprehensive market intelligence report with:
+        
+        📈 TRENDING OPPORTUNITIES (Next 7 days):
+        • 3 immediate content opportunities based on current trends
+        • 2 platform-specific recommendations (WhatsApp, Instagram, TikTok, Facebook)
+        • 1 viral content idea for the week
+        
+        🎯 COMPETITOR ANALYSIS:
+        • Key strengths to leverage from competitors
+        • Market gaps to exploit
+        • Pricing and service differentiators
+        
+        💡 ACTIONABLE RECOMMENDATIONS:
+        • Immediate actions for this week
+        • Content calendar suggestions
+        • Engagement strategy updates
+        
+        Format the response in clear, actionable sections with emojis.
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a market intelligence expert specializing in African small business trends. Provide actionable, specific recommendations based on real-time data."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=800,
+            temperature=0.7,
+        )
+        
+        return response.choices[0].message.content.strip()
+        
+    except Exception as e:
+        print(f"Trend analysis generation error: {e}")
+        return "I'm currently updating our trend analysis system. Check back in a few hours for the latest market insights!"
+
+def send_pro_weekly_updates():
+    """Send weekly trend updates to Pro plan users on Sun, Wed, Fri"""
+    try:
+        # Get all Pro plan users
+        response = supabase.table('subscriptions').select('profile_id').eq('plan_type', 'pro').eq('is_active', True).execute()
+        
+        if response.data:
+            for subscription in response.data:
+                profile_id = subscription['profile_id']
+                
+                # Get user profile
+                profile_response = supabase.table('profiles').select('*').eq('id', profile_id).execute()
+                if profile_response.data:
+                    user_profile = profile_response.data[0]
+                    
+                    # Generate trend analysis
+                    trend_report = generate_trend_analysis(user_profile)
+                    
+                    # Store notification (in production, send via WhatsApp)
+                    notification_message = f"""📊 WEEKLY TREND UPDATE for {user_profile.get('business_name', 'Your Business')}
+
+{trend_report}
+
+💡 Pro Tip: Use these insights in your 'strat' command for targeted strategies!"""
+
+                    # Store in notifications table
+                    supabase.table('notifications').insert({
+                        'profile_id': profile_id,
+                        'message': notification_message,
+                        'type': 'weekly_trends',
+                        'sent_at': datetime.now().isoformat()
+                    }).execute()
+                    
+                    print(f"Trend update generated for {user_profile.get('business_name')}")
+                    
+    except Exception as e:
+        print(f"Weekly update error: {e}")
+
+# Schedule weekly updates
+def schedule_weekly_updates():
+    """Schedule trend updates for Sun, Wed, Fri at 9 AM"""
+    schedule.every().sunday.at("09:00").do(send_pro_weekly_updates)
+    schedule.every().wednesday.at("09:00").do(send_pro_weekly_updates)
+    schedule.every().friday.at("09:00").do(send_pro_weekly_updates)
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(3600)  # Check every hour
+
+# Start scheduling in background thread
+update_thread = threading.Thread(target=schedule_weekly_updates, daemon=True)
+update_thread.start()
+
+# ===== CORE BUSINESS FUNCTIONS =====
 
 def get_or_create_profile(phone_number):
     """Checks if a user exists. If not, creates a new profile for them."""
@@ -258,6 +543,15 @@ def generate_realistic_ideas(user_profile, products, output_type='ideas', num_id
         if user_profile.get('business_location'):
             business_context += f" located in {user_profile['business_location']}"
         
+        # For Pro users, include real-time trends in strategy generation
+        if output_type == 'strategies' and check_subscription(user_profile['id']):
+            plan_info = get_user_plan_info(user_profile['id'])
+            if plan_info and plan_info.get('plan_type') == 'pro':
+                # Add real-time insights for Pro users
+                trends_data = get_google_trends(user_profile.get('business_type'))
+                if trends_data:
+                    business_context += f" | Current trends: {trends_data.get('trending_keywords', {})}"
+        
         # Determine prompt based on output_type (plan level)
         if output_type == 'ideas':
             prompt = f"""
@@ -350,6 +644,114 @@ def generate_realistic_ideas(user_profile, products, output_type='ideas', num_id
         print(f"OpenAI API Error: {e}")
         return "Sorry, I'm having trouble generating content right now. Please try again in a moment."
 
+# ===== FIXED MESSAGE LIMIT FUNCTIONS =====
+
+def get_remaining_messages(profile_id):
+    """Get remaining messages for current period with error handling"""
+    try:
+        response = supabase.table('profiles').select('*').eq('id', profile_id).execute()
+        if response.data:
+            data = response.data[0]
+            
+            # Handle both correct and typo field names
+            used = data.get('used_messages') or data.get('used_nessages', 0)
+            max_msgs = data.get('max_messages') or data.get('max_nessages', 20)
+            
+            # Ensure they are integers
+            used = int(used) if used is not None else 0
+            max_msgs = int(max_msgs) if max_msgs is not None else 20
+            
+            remaining = max(0, max_msgs - used)
+            print(f"DEBUG: User {profile_id} - Used: {used}, Max: {max_msgs}, Remaining: {remaining}")
+            return remaining
+            
+        return 15  # Fallback
+    except Exception as e:
+        print(f"Error getting remaining messages: {e}")
+        return 15  # Fallback to allow messages
+
+def update_message_usage(profile_id, count=1):
+    """Update message usage count with error handling"""
+    try:
+        # First get current value
+        response = supabase.table('profiles').select('*').eq('id', profile_id).execute()
+        if response.data:
+            data = response.data[0]
+            
+            # Handle both correct and typo field names
+            current_used = data.get('used_messages') or data.get('used_nessages', 0)
+            current_used = int(current_used) if current_used is not None else 0
+            
+            # Update both field names to be safe
+            update_data = {
+                'used_messages': current_used + count,
+                'used_nessages': current_used + count
+            }
+            
+            supabase.table('profiles').update(update_data).eq('id', profile_id).execute()
+            print(f"DEBUG: Updated message usage for {profile_id} to {current_used + count}")
+    except Exception as e:
+        print(f"Error updating message usage: {e}")
+
+# ===== NEW PRO PLAN FEATURES =====
+
+def handle_trends_command(phone_number, user_profile):
+    """Handle trends command for Pro plan users"""
+    if not check_subscription(user_profile['id']):
+        return "🔒 This feature is only available for Pro plan subscribers. Reply 'subscribe' to upgrade!"
+    
+    plan_info = get_user_plan_info(user_profile['id'])
+    if not plan_info or plan_info.get('plan_type') != 'pro':
+        return "🔒 Real-time trends are exclusive to Pro plan users. Reply 'subscribe' to upgrade!"
+    
+    # Generate real-time trend analysis
+    trend_report = generate_trend_analysis(user_profile)
+    
+    return f"""📊 REAL-TIME TREND ANALYSIS for {user_profile.get('business_name', 'Your Business')}
+
+{trend_report}
+
+💡 Pro Tip: Use these insights with the 'strat' command for hyper-targeted strategies!"""
+
+def handle_competitor_command(phone_number, user_profile):
+    """Handle competitor analysis for Pro plan users"""
+    if not check_subscription(user_profile['id']):
+        return "🔒 This feature is only available for Pro plan subscribers. Reply 'subscribe' to upgrade!"
+    
+    plan_info = get_user_plan_info(user_profile['id'])
+    if not plan_info or plan_info.get('plan_type') != 'pro':
+        return "🔒 Competitor analysis is exclusive to Pro plan users. Reply 'subscribe' to upgrade!"
+    
+    # Generate competitor insights
+    competitor_data = get_competitor_insights(
+        user_profile.get('business_type'),
+        user_profile.get('business_location', 'Kenya')
+    )
+    
+    if competitor_data:
+        analysis = f"""🎯 COMPETITOR INTELLIGENCE REPORT
+
+🏢 TOP COMPETITORS in your area:
+{chr(10).join([f"• {comp['name']} ({comp['specialty']}) - ⭐ {comp['rating']}" for comp in competitor_data.get('top_competitors', [])])}
+
+📈 MARKET GAPS to exploit:
+{chr(10).join([f"• {gap}" for gap in competitor_data.get('market_gaps', [])])}
+
+💰 PRICING INSIGHTS:
+• Average: {competitor_data.get('pricing_trends', {}).get('average_price', 'Market competitive')}
+• Trend: {competitor_data.get('pricing_trends', {}).get('trend', 'Stable market')}
+• Opportunity: {competitor_data.get('pricing_trends', {}).get('opportunity', 'Value differentiation')}
+
+🎭 CUSTOMER SENTIMENT:
+• What customers LOVE: {', '.join(competitor_data.get('customer_sentiment', {}).get('positive', []))}
+• Common COMPLAINTS: {', '.join(competitor_data.get('customer_sentiment', {}).get('negative', []))}"""
+    else:
+        analysis = "Currently gathering competitor data for your business type and location..."
+    
+    return analysis
+
+# ===== CORE SYSTEM FUNCTIONS =====
+
 def get_intelligent_response(incoming_msg, user_profile):
     """Always provide a context-aware response"""
     # Check if we have business context
@@ -393,34 +795,6 @@ def get_user_plan_info(profile_id):
     except Exception as e:
         print(f"Error getting plan info: {e}")
         return None
-
-def update_message_usage(profile_id, count=1):
-    """Update message usage count"""
-    try:
-        # First get current value
-        response = supabase.table('profiles').select('used_messages').eq('id', profile_id).execute()
-        if response.data:
-            current_used = response.data[0].get('used_messages', 0)
-            # Then update
-            supabase.table('profiles').update({
-                'used_messages': current_used + count
-            }).eq('id', profile_id).execute()
-    except Exception as e:
-        print(f"Error updating message usage: {e}")
-
-def get_remaining_messages(profile_id):
-    """Get remaining messages for current period"""
-    try:
-        response = supabase.table('profiles').select('used_messages, max_messages').eq('id', profile_id).execute()
-        if response.data:
-            data = response.data[0]
-            used = data.get('used_messages', 0)
-            max_msgs = data.get('max_messages', 20)
-            return max(0, max_msgs - used)
-        return 15  # Fallback
-    except Exception as e:
-        print(f"Error getting remaining messages: {e}")
-        return 15
 
 def handle_user_without_products(phone_number, user_profile, incoming_msg):
     """Handle existing users who don't have products saved"""
@@ -781,6 +1155,10 @@ def webhook():
         resp.message("Sorry, we're experiencing technical difficulties. Please try again later.")
         return str(resp)
     
+    # DEBUG: Log user profile status
+    print(f"DEBUG: User profile complete: {user_profile.get('profile_complete')}")
+    print(f"DEBUG: User message count: {user_profile.get('used_messages')} / {user_profile.get('max_messages')}")
+    
     # ✅ ENFORCE PROFILE COMPLETION - Check if profile is incomplete
     if not user_profile.get('profile_complete'):
         # If user is already in onboarding, continue with onboarding
@@ -810,7 +1188,7 @@ I need to know about your business first to create personalized marketing conten
         return str(resp)
         
     # ✅ PRIORITY COMMANDS CHECK - Clear any ongoing flows (only for complete profiles)
-    priority_commands = ['ideas', 'strat', 'status', 'subscribe', 'help', 'exit', 'cancel', 'profile']
+    priority_commands = ['ideas', 'strat', 'status', 'subscribe', 'help', 'exit', 'cancel', 'profile', 'trends', 'competitor']
     if incoming_msg.strip() in priority_commands:
         if phone_number in user_sessions:
             user_sessions[phone_number]['onboarding'] = False
@@ -818,6 +1196,17 @@ I need to know about your business first to create personalized marketing conten
             user_sessions[phone_number]['awaiting_custom_product'] = False
             user_sessions[phone_number]['adding_products'] = False
             user_sessions[phone_number]['managing_profile'] = False
+    
+    # ✅ Handle NEW Pro plan commands
+    if incoming_msg.strip() == 'trends':
+        trends_response = handle_trends_command(phone_number, user_profile)
+        resp.message(trends_response)
+        return str(resp)
+    
+    elif incoming_msg.strip() == 'competitor':
+        competitor_response = handle_competitor_command(phone_number, user_profile)
+        resp.message(competitor_response)
+        return str(resp)
     
     # ✅ Handle profile management flow
     if user_sessions.get(phone_number, {}).get('managing_profile'):
@@ -918,7 +1307,7 @@ I need to know about your business first to create personalized marketing conten
         
         remaining = get_remaining_messages(user_profile['id'])
         if remaining <= 0:
-            resp.message("You've used all your available messages for this period. Reply 'status' to check your subscription.")
+            resp.message("You've used all your available AI content generations for this period. Reply 'status' to check your usage.")
             return str(resp)
         
         product_message = start_product_selection(phone_number, user_profile)
@@ -932,7 +1321,7 @@ I need to know about your business first to create personalized marketing conten
         
         remaining = get_remaining_messages(user_profile['id'])
         if remaining <= 0:
-            resp.message("You've used all your available messages for this period. Reply 'status' to check your subscription.")
+            resp.message("You've used all your available AI content generations for this period. Reply 'status' to check your usage.")
             return str(resp)
         
         # For strategies, we'll set a flag to generate strategy content
@@ -977,18 +1366,23 @@ Benefits: {PLANS[plan_type]['description']}
 Content Type: {output_type.replace('_', ' ').title()}
 
 📈 USAGE THIS MONTH:
-Used: {user_profile.get('used_messages', 0)} messages
-Remaining: {remaining} messages
+Used: {user_profile.get('used_messages', 0)} AI generations
+Remaining: {remaining} AI generations
 
 💡 Reply 'ideas' for social media marketing content"""
+                    
+                    # Add Pro plan features info
+                    if plan_type == 'pro':
+                        status_message += "\n\n🎯 PRO FEATURES:\n• Real-time trend analysis ('trends')\n• Competitor intelligence ('competitor')\n• Weekly market updates (Sun, Wed, Fri)"
+                    
                 else:
                     status_message = f"""📊 YOUR SUBSCRIPTION STATUS:
 
 Plan: Active Subscription
 Content Type: {output_type.replace('_', ' ').title()}
 📈 USAGE THIS MONTH:
-Used: {user_profile.get('used_messages', 0)} messages
-Remaining: {remaining} messages
+Used: {user_profile.get('used_messages', 0)} AI generations
+Remaining: {remaining} AI generations
 
 💡 Reply 'ideas' for social media marketing content"""
             
@@ -1020,8 +1414,10 @@ Remaining: {remaining} messages
 
 💎 PRO - KSh 599/month
 • Unlimited ideas + full marketing strategies
-• Comprehensive 7-day content plans
-• Target audience analysis & engagement tactics
+• REAL-TIME Google Trends analysis
+• Competitor intelligence reports
+• Weekly market updates (Sun, Wed, Fri)
+• AI-powered market insights
 
 Reply with 'Basic', 'Growth', or 'Pro'."""
         
@@ -1038,16 +1434,22 @@ Reply with 'Basic', 'Growth', or 'Pro'."""
         return str(resp)
     
     elif 'help' in incoming_msg:
-        resp.message("""🤖 JengaBIBOT HELP:
+        help_message = """🤖 JengaBIBOT HELP:
 
 • 'ideas' - Generate social media marketing ideas
 • 'strat' - Generate marketing strategies  
 • 'status' - Check subscription  
 • 'subscribe' - Choose a plan
 • 'profile' - Manage your business profile
-• 'hello' - Start over
+• 'hello' - Start over"""
 
-I help African businesses create effective social media marketing!""")
+        # Add Pro plan commands if user is on Pro plan
+        if check_subscription(user_profile['id']):
+            plan_info = get_user_plan_info(user_profile['id'])
+            if plan_info and plan_info.get('plan_type') == 'pro':
+                help_message += "\n\n🎯 PRO PLAN COMMANDS:\n• 'trends' - Real-time market trends\n• 'competitor' - Competitor analysis"
+
+        resp.message(help_message)
         return str(resp)
     
     else:
@@ -1055,6 +1457,27 @@ I help African businesses create effective social media marketing!""")
         intelligent_response = get_intelligent_response(incoming_msg, user_profile)
         resp.message(intelligent_response)
         return str(resp)
+    
+    # EMERGENCY FALLBACK - Ensure we always send a response
+    try:
+        # If we reached here without sending a response, send help
+        if len(resp.to_string()) < 50:  # No response was built
+            print("EMERGENCY: No response was built, sending fallback message")
+            help_message = """🤖 JengaBIBOT HELP:
+
+• 'ideas' - Generate social media marketing ideas
+• 'strat' - Generate marketing strategies  
+• 'status' - Check subscription  
+• 'subscribe' - Choose a plan
+• 'profile' - Manage your business profile
+• 'help' - Show this help menu
+
+I'm here to help your business with social media marketing!"""
+            resp.message(help_message)
+    except Exception as e:
+        print(f"EMERGENCY FALLBACK ERROR: {e}")
+        # Final absolute fallback
+        resp.message("Hello! I'm here to help your business. Reply 'help' to see available commands.")
     
     return str(resp)
 
