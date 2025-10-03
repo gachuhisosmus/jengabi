@@ -654,8 +654,8 @@ def get_remaining_messages(profile_id):
             data = response.data[0]
             
             # Handle both correct and typo field names
-            used = data.get('used_messages') or data.get('used_nessages', 0)
-            max_msgs = data.get('max_messages') or data.get('max_nessages', 20)
+            used = data.get('used_messages') or data.get('used_messages', 0)
+            max_msgs = data.get('max_messages') or data.get('max_messages', 20)
             
             # Ensure they are integers
             used = int(used) if used is not None else 0
@@ -679,13 +679,13 @@ def update_message_usage(profile_id, count=1):
             data = response.data[0]
             
             # Handle both correct and typo field names
-            current_used = data.get('used_messages') or data.get('used_nessages', 0)
+            current_used = data.get('used_messages') or data.get('used_messages', 0)
             current_used = int(current_used) if current_used is not None else 0
             
             # Update both field names to be safe
             update_data = {
                 'used_messages': current_used + count,
-                'used_nessages': current_used + count
+                'used_messages': current_used + count
             }
             
             supabase.table('profiles').update(update_data).eq('id', profile_id).execute()
