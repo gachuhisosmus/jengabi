@@ -362,7 +362,7 @@ def get_intelligent_response(incoming_msg, user_profile):
     # Business-aware responses
     business_questions = ['how', 'what', 'when', 'where', 'why', 'can i', 'should i', 'advice']
     if any(q in incoming_msg for q in business_questions) and business_context:
-        return f"I'll help you with that{business_context}! Reply '*ideas*' for social media marketing ideas, 'strat' for strategies, or ask me anything about your business."
+        return f"I'll help you with that{business_context}! Reply 'ideas' for social media marketing ideas, 'strat' for strategies, or ask me anything about your business."
     
     # Default helpful response
     help_options = "Reply 'ideas' for social media marketing ideas, 'strat' for strategies, 'status' for subscription info, 'profile' to manage your business info, or 'help' for more options."
