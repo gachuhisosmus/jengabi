@@ -75,22 +75,41 @@ def get_google_trends(business_type, location="Kenya"):
         # Build keyword list based on business type
         keywords = build_trend_keywords(business_type)
         
-        # Get trending data
+        # Validate keywords - ensure we have valid terms
+        if not keywords or len(keywords) == 0:
+            print("No valid keywords for Google Trends, using fallback")
+            return get_fallback_trends(business_type)
+            
+        # Get trending data with better error handling
         pytrends.build_payload(keywords, timeframe='today 1-m', geo=location)
         trends_data = pytrends.interest_over_time()
         
         if not trends_data.empty:
-            # Get current trending topics
-            trending_now = pytrends.trending_searches(pn=location)
+            try:
+                # Get current trending topics
+                trending_now = pytrends.trending_searches(pn=location)
+                current_trends = trending_now.head(5).values.tolist() if not trending_now.empty else []
+            except:
+                current_trends = []
+                
+            try:
+                related_queries = pytrends.related_queries()
+            except:
+                related_queries = {}
+                
             return {
                 'trending_keywords': trends_data.mean().to_dict(),
-                'current_trends': trending_now.head(5).values.tolist(),
-                'related_queries': pytrends.related_queries()
+                'current_trends': current_trends,
+                'related_queries': related_queries
             }
-        return None
+        
+        # If we get empty data, use fallback
+        print("Google Trends returned empty data, using fallback")
+        return get_fallback_trends(business_type)
+        
     except Exception as e:
-        print(f"Google Trends error: {e}")
-        return None
+        print(f"Google Trends API error: {e}, using fallback data")
+        return get_fallback_trends(business_type)
 
 def build_trend_keywords(business_type):
     """Build relevant keywords for Google Trends based on business type"""
@@ -101,10 +120,52 @@ def build_trend_keywords(business_type):
         'fashion': ['fashion trends', 'clothing styles', 'outfit ideas', 'seasonal fashion'],
         'tech': ['tech gadgets', 'software solutions', 'digital services', 'app development'],
         'health': ['fitness tips', 'wellness', 'health services', 'medical advice'],
-        'education': ['online courses', 'learning resources', 'educational content', 'skill development']
+        'education': ['online courses', 'learning resources', 'educational content', 'skill development'],
+        'business marketing software': ['marketing software', 'social media tools', 'business automation', 'digital marketing'],
+        'marketing': ['digital marketing', 'social media marketing', 'content marketing', 'email marketing'],
+        'software': ['business software', 'SaaS', 'software solutions', 'technology tools']
     }
     
-    return keyword_map.get(business_type.lower(), ['business', 'entrepreneurship', 'marketing', 'sales'])
+    # Handle business_type variations
+    business_type_lower = business_type.lower() if business_type else ''
+    
+    # Try exact match first
+    if business_type_lower in keyword_map:
+        return keyword_map[business_type_lower]
+    
+    # Try partial matches
+    for key, keywords in keyword_map.items():
+        if key in business_type_lower or business_type_lower in key:
+            return keywords
+    
+    # Default fallback
+    return ['business', 'entrepreneurship', 'marketing', 'sales']
+    
+def get_fallback_trends(business_type):
+    """Provide fallback trend data when Google Trends fails"""
+    fallback_trends = {
+        'business marketing software': {
+            'trending_keywords': {'marketing automation': 85, 'social media tools': 78, 'business software': 92},
+            'current_trends': [['AI marketing tools'], ['social media scheduling'], ['business automation']],
+            'related_queries': {}
+        },
+        'restaurant': {
+            'trending_keywords': {'food delivery': 95, 'local cuisine': 82, 'restaurant deals': 75},
+            'current_trends': [['weekend specials'], ['healthy options'], ['family deals']],
+            'related_queries': {}
+        },
+        'salon': {
+            'trending_keywords': {'hair styling': 88, 'beauty treatments': 76, 'skincare': 91},
+            'current_trends': [['summer hairstyles'], ['organic products'], ['men grooming']],
+            'related_queries': {}
+        }
+    }
+    
+    return fallback_trends.get(business_type.lower(), {
+        'trending_keywords': {'business growth': 80, 'customer engagement': 75, 'digital marketing': 85},
+        'current_trends': [['business tips'], ['customer service'], ['growth strategies']],
+        'related_queries': {}
+    })    
 
 def get_competitor_insights(business_type, location):
     """Get competitor insights using various data sources"""
@@ -551,6 +612,15 @@ def generate_realistic_ideas(user_profile, products, output_type='ideas', num_id
             plan_info = get_user_plan_info(user_profile['id'])
             if plan_info and plan_info.get('plan_type') == 'pro':
                 # Add real-time insights for Pro users
+                try:
+                    trends_data = get_google_trends(user_profile.get('business_type'))
+                    if trends_data:
+                        business_context += f" | Current trends: {trends_data.get('trending_keywords', {})}"
+                    else:
+                        business_context += " | Trend data temporarily unavailable"
+                except Exception as e:
+                    print(f"Google Trends error in idea generation: {e}")
+                    business_context += " | Using standard market insights"
                 trends_data = get_google_trends(user_profile.get('business_type'))
                 if trends_data:
                     business_context += f" | Current trends: {trends_data.get('trending_keywords', {})}"
