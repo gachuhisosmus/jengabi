@@ -43,21 +43,24 @@ user_sessions = {}
 PLANS = {
     'basic': {
         'price': 130,
-        'description': '5 social media ideas per week',
+        'description': '5 social media ideas per week + Business Q&A + Customer message analysis',
         'keyword': 'basic',
-        'output_type': 'ideas'
+        'output_type': 'ideas',
+        'commands': ['ideas', '4wd', 'qstn']
     },
     'growth': {
         'price': 249,
-        'description': '15 ideas + weekly content strategy',
+        'description': '15 ideas + Marketing strategies + Business Q&A + Customer message analysis',
         'keyword': 'growth',
-        'output_type': 'ideas_strategy'
+        'output_type': 'ideas_strategy',
+        'commands': ['ideas', 'strat', '4wd', 'qstn']
     },
     'pro': {
         'price': 599,
-        'description': 'Unlimited ideas + full marketing strategies + Real-time trends & competitor insights',
+        'description': 'Unlimited ideas + Full strategies + Real-time trends + Competitor insights + Business Q&A + Customer message analysis',
         'keyword': 'pro',
-        'output_type': 'strategies'
+        'output_type': 'strategies',
+        'commands': ['ideas', 'strat', 'trends', 'competitor', '4wd', 'qstn']
     }
 }
 
@@ -693,6 +696,149 @@ def update_message_usage(profile_id, count=1):
     except Exception as e:
         print(f"Error updating message usage: {e}")
 
+# ===== NEW QSTN COMMAND FUNCTION =====
+
+def handle_qstn_command(phone_number, user_profile, question):
+    """Handle business-specific Q&A based on business type"""
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        # Build business context for personalized answers
+        business_context = f"""
+        Business Context:
+        - Name: {user_profile.get('business_name', 'Not specified')}
+        - Type: {user_profile.get('business_type', 'Not specified')}
+        - Location: {user_profile.get('business_location', 'Kenya')}
+        - Products/Services: {', '.join(user_profile.get('business_products', []))}
+        - Marketing Goals: {user_profile.get('business_marketing_goals', 'Not specified')}
+        """
+        
+        prompt = f"""
+        Act as a business consultant specializing in African small businesses.
+        
+        {business_context}
+        
+        Question: {question}
+        
+        Provide practical, actionable advice that is:
+        - Specific to their business type and location in Kenya
+        - Realistic and achievable for a small business
+        - Focused on immediate implementation
+        - Culturally appropriate for the Kenyan market
+        - Includes concrete steps or examples
+        
+        Format your response with clear, actionable points using bullet points.
+        Keep it under 300 words and use simple, direct language.
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a practical business consultant for Kenyan small businesses. Provide specific, actionable advice that is realistic and culturally appropriate."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=400,
+            temperature=0.7,
+        )
+        
+        answer = response.choices[0].message.content.strip()
+        
+        # Format the response with bold text
+        formatted_response = f"""*🤔 BUSINESS ADVICE FOR {user_profile.get('business_name', 'YOUR BUSINESS').upper()}*
+
+*Your Question:* {question}
+
+*My Advice:*
+{answer}
+
+*💡 Tip:* Use this advice to improve your business operations and customer experience."""
+
+        return formatted_response
+        
+    except Exception as e:
+        print(f"QSTN command error: {e}")
+        return "Sorry, I'm having trouble generating business advice right now. Please try again in a moment."
+
+# ===== NEW 4WD COMMAND FUNCTION =====
+
+def handle_4wd_command(phone_number, user_profile, customer_message):
+    """Handle customer message analysis for business insights"""
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        # Build business context for personalized analysis
+        business_context = f"""
+        Business Context:
+        - Name: {user_profile.get('business_name', 'Not specified')}
+        - Type: {user_profile.get('business_type', 'Not specified')}
+        - Location: {user_profile.get('business_location', 'Kenya')}
+        - Products/Services: {', '.join(user_profile.get('business_products', []))}
+        """
+        
+        prompt = f"""
+        Act as a customer experience analyst for African small businesses.
+        
+        {business_context}
+        
+        Customer Message to Analyze:
+        "{customer_message}"
+        
+        Provide a comprehensive analysis with:
+        
+        🎭 SENTIMENT ANALYSIS:
+        - Overall sentiment (positive/negative/neutral)
+        - Key emotions detected
+        - Urgency level
+        
+        🔍 KEY INSIGHTS:
+        - Main customer need or concern
+        - Underlying issues (if any)
+        - Customer expectations
+        
+        💡 RECOMMENDED RESPONSE:
+        - 3 professional response options
+        - Tone recommendations
+        - Follow-up actions
+        
+        🚀 BUSINESS IMPROVEMENTS:
+        - 2 actionable insights for business improvement
+        - Potential service/product enhancements
+        
+        Keep the analysis practical and focused on Kenyan business context.
+        Use bullet points and keep it under 400 words.
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a customer experience expert for Kenyan small businesses. Analyze customer messages and provide practical, actionable insights."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500,
+            temperature=0.7,
+        )
+        
+        analysis = response.choices[0].message.content.strip()
+        
+        # Format the response with bold text
+        formatted_response = f"""*📞 CUSTOMER MESSAGE ANALYSIS FOR {user_profile.get('business_name', 'YOUR BUSINESS').upper()}*
+
+*Customer Message:*
+"{customer_message}"
+
+*Detailed Analysis:*
+{analysis}
+
+*💡 Pro Tip:* Use these insights to improve customer experience and grow your business."""
+
+        return formatted_response
+        
+    except Exception as e:
+        print(f"4WD command error: {e}")
+        return "Sorry, I'm having trouble analyzing the customer message right now. Please try again in a moment."
+
 # ===== NEW PRO PLAN FEATURES =====
 
 def handle_trends_command(phone_number, user_profile):
@@ -764,10 +910,10 @@ def get_intelligent_response(incoming_msg, user_profile):
     # Business-aware responses
     business_questions = ['how', 'what', 'when', 'where', 'why', 'can i', 'should i', 'advice']
     if any(q in incoming_msg for q in business_questions) and business_context:
-        return f"I'll help you with that{business_context}! Reply 'ideas' for social media marketing ideas, 'strat' for strategies, or ask me anything about your business."
+        return f"I'll help you with that{business_context}! Reply 'ideas' for social media marketing ideas, 'strat' for strategies, 'qstn' for business advice, '4wd' for customer message analysis, or ask me anything about your business."
     
     # Default helpful response
-    help_options = "Reply 'ideas' for social media marketing ideas, 'strat' for strategies, 'status' for subscription info, 'profile' to manage your business info, or 'help' for more options."
+    help_options = "Reply 'ideas' for social media marketing ideas, 'strat' for strategies, 'qstn' for business advice, '4wd' for customer message analysis, 'status' for subscription info, 'profile' to manage your business info, or 'help' for more options."
     return f"I'm here to help your{business_context} business with social media marketing! {help_options}"
 
 def check_subscription(profile_id):
@@ -783,15 +929,7 @@ def check_subscription(profile_id):
 def get_user_plan_info(profile_id):
     """Gets the user's plan type and output_type."""
     try:
-        # == DEBUG ==
-        # print(f"🔍 DEBUG PLAN INFO: Querying subscriptions for {profile_id}")
-        # ==END DEBUG ==
-
-
         response = supabase.table('subscriptions').select('plan_type').eq('profile_id', profile_id).eq('is_active', True).execute()
-        # ==DEBUG==
-        # print(f"🔍 DEBUG PLAN INFO: Database response data = {response.data}")
-        # print(f"🔍 DEBUG PLAN INFO: Response count = {len(response.data)}")
         if response.data:
             plan_data = response.data[0]
             # Add output_type based on plan_type
@@ -937,7 +1075,7 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
         elif incoming_msg == '9':
             # Exit profile management
             user_sessions[phone_number]['managing_profile'] = False
-            return True, "Returning to main menu. Reply 'ideas' for ideas, 'strat' for strategies, 'status' for subscription, or 'help' for options."
+            return True, "Returning to main menu. Reply 'ideas' for ideas, 'strat' for strategies, 'qstn' for business advice, '4wd' for customer analysis, 'status' for subscription, or 'help' for options."
         
         else:
             return False, "Please choose a valid option (1-9):"
@@ -1198,7 +1336,7 @@ I need to know about your business first to create personalized marketing conten
         return str(resp)
         
     # ✅ PRIORITY COMMANDS CHECK - Clear any ongoing flows (only for complete profiles)
-    priority_commands = ['ideas', 'strat', 'status', 'subscribe', 'help', 'exit', 'cancel', 'profile', 'trends', 'competitor']
+    priority_commands = ['ideas', 'strat', 'status', 'subscribe', 'help', 'exit', 'cancel', 'profile', 'trends', 'competitor', 'qstn', '4wd']
     if incoming_msg.strip() in priority_commands:
         if phone_number in user_sessions:
             user_sessions[phone_number]['onboarding'] = False
@@ -1206,6 +1344,86 @@ I need to know about your business first to create personalized marketing conten
             user_sessions[phone_number]['awaiting_custom_product'] = False
             user_sessions[phone_number]['adding_products'] = False
             user_sessions[phone_number]['managing_profile'] = False
+    
+    # ✅ Handle QSTN command (NEW - Available for ALL plans)
+    if incoming_msg.strip() == 'qstn':
+        if not check_subscription(user_profile['id']):
+            resp.message("You need a subscription to use business Q&A. Reply 'subscribe' to choose a plan.")
+            return str(resp)
+        
+        # Set session state for QSTN question
+        if phone_number not in user_sessions:
+            user_sessions[phone_number] = {}
+        user_sessions[phone_number]['awaiting_qstn'] = True
+        resp.message("""*🤔 BUSINESS ADVICE REQUEST*
+
+What's your business question? I'll provide personalized advice based on your business type and context.
+
+Examples:
+• "How should I price my new products?"
+• "What's the best way to handle customer complaints?"
+• "How can I attract more customers to my store?"
+
+Ask me anything about your business operations, marketing, or customer service:""")
+        return str(resp)
+    
+    # ✅ Handle QSTN question input
+    if user_sessions.get(phone_number, {}).get('awaiting_qstn'):
+        user_sessions[phone_number]['awaiting_qstn'] = False
+        question = incoming_msg.strip()
+        
+        if not question or len(question) < 5:
+            resp.message("Please ask a specific business question (at least 5 characters). Reply 'qstn' to try again.")
+            return str(resp)
+        
+        # Generate business advice
+        qstn_response = handle_qstn_command(phone_number, user_profile, question)
+        resp.message(qstn_response)
+        update_message_usage(user_profile['id'])
+        return str(resp)
+    
+    # ✅ Handle 4WD command (NEW - Available for ALL plans)
+    if incoming_msg.strip() == '4wd':
+        if not check_subscription(user_profile['id']):
+            resp.message("You need a subscription to analyze customer messages. Reply 'subscribe' to choose a plan.")
+            return str(resp)
+        
+        # Set session state for 4WD message
+        if phone_number not in user_sessions:
+            user_sessions[phone_number] = {}
+        user_sessions[phone_number]['awaiting_4wd'] = True
+        resp.message("""*📞 CUSTOMER MESSAGE ANALYSIS*
+
+Forward or paste a customer message you'd like me to analyze. I'll provide:
+
+• Sentiment analysis
+• Key insights & concerns  
+• Response recommendations
+• Business improvement tips
+
+Examples of customer messages to analyze:
+• "Your service was too slow today"
+• "I love your products but they're expensive"
+• "Do you have this in stock?"
+• Any customer feedback, complaint, or question
+
+Paste or forward the customer message now:""")
+        return str(resp)
+    
+    # ✅ Handle 4WD message input
+    if user_sessions.get(phone_number, {}).get('awaiting_4wd'):
+        user_sessions[phone_number]['awaiting_4wd'] = False
+        customer_message = incoming_msg.strip()
+        
+        if not customer_message or len(customer_message) < 5:
+            resp.message("Please provide a customer message to analyze (at least 5 characters). Reply '4wd' to try again.")
+            return str(resp)
+        
+        # Generate customer message analysis
+        analysis_response = handle_4wd_command(phone_number, user_profile, customer_message)
+        resp.message(analysis_response)
+        update_message_usage(user_profile['id'])
+        return str(resp)
     
     # ✅ Handle NEW Pro plan commands
     if incoming_msg.strip() == 'trends':
@@ -1344,31 +1562,18 @@ I need to know about your business first to create personalized marketing conten
         return str(resp)
     
     elif 'hello' in incoming_msg or 'hi' in incoming_msg or 'start' in incoming_msg:
-        resp.message("Hello! Welcome back! Reply 'ideas' for social media marketing ideas, 'strat' for strategies, 'status' to check your subscription, or 'profile' to manage your business info.")
+        resp.message("Hello! Welcome back! Reply 'ideas' for social media marketing ideas, 'strat' for strategies, 'qstn' for business advice, '4wd' for customer message analysis, 'status' to check your subscription, or 'profile' to manage your business info.")
         return str(resp)
     
     elif 'status' in incoming_msg:
         try:
-            
-            # Debug:
-            # print(f"🔍 DEBUG STATUS: Checking user {user_profile['id']}")
-            # print(f"🔍 DEBUG STATUS: Phone number: {phone_number}")
-
             # Check subscription with better error handling
             has_subscription = check_subscription(user_profile['id'])
             
-            # print(f"🔍 DEBUG STATUS: has_subscription = {has_subscription}")
-
             if has_subscription:
                 # User HAS a subscription
                 plan_info = get_user_plan_info(user_profile['id'])
                 
-                # == Debug: ==
-                # print(f"🔍 DEBUG STATUS: plan_info = {plan_info}")
-                # if plan_info:
-                    # print(f"🔍 DEBUG STATUS: plan_info keys = {list(plan_info.keys())}")
-                    # print(f"🔍 DEBUG STATUS: plan_type = {plan_info.get('plan_type')}")
-
                 # Safely handle plan_info
                 if plan_info and isinstance(plan_info, dict):
                     plan_type = plan_info.get('plan_type', 'unknown')
@@ -1381,37 +1586,37 @@ I need to know about your business first to create personalized marketing conten
                 
                 # Build status message for subscribed users
                 if plan_type in PLANS:
-                    status_message = f"""📊 YOUR SUBSCRIPTION STATUS:
+                    status_message = f"""*📊 YOUR SUBSCRIPTION STATUS*
 
-Plan: {plan_type.upper()} Package
-Price: KSh {PLANS[plan_type]['price']}/month
-Benefits: {PLANS[plan_type]['description']}
-Content Type: {output_type.replace('_', ' ').title()}
+*Plan:* {plan_type.upper()} Package
+*Price:* KSh {PLANS[plan_type]['price']}/month
+*Benefits:* {PLANS[plan_type]['description']}
+*Content Type:* {output_type.replace('_', ' ').title()}
 
-📈 USAGE THIS MONTH:
-Used: {user_profile.get('used_messages', 0)} AI generations
-Remaining: {remaining} AI generations
+*📈 USAGE THIS MONTH:*
+*Used:* {user_profile.get('used_messages', 0)} AI generations
+*Remaining:* {remaining} AI generations
 
-💡 Reply 'ideas' for social media marketing content"""
+💡 Reply *'ideas'* for social media marketing content"""
                     
                     # Add Pro plan features info
                     if plan_type == 'pro':
-                        status_message += "\n\n🎯 PRO FEATURES:\n• Real-time trend analysis ('trends')\n• Competitor intelligence ('competitor')\n• Weekly market updates (Sun, Wed, Fri)"
+                        status_message += "\n\n*🎯 PRO FEATURES:*\n• Real-time trend analysis (*'trends'*)\n• Competitor intelligence (*'competitor'*)\n• Weekly market updates (Sun, Wed, Fri)"
                     
                 else:
-                    status_message = f"""📊 YOUR SUBSCRIPTION STATUS:
+                    status_message = f"""*📊 YOUR SUBSCRIPTION STATUS*
 
-Plan: Active Subscription
-Content Type: {output_type.replace('_', ' ').title()}
-📈 USAGE THIS MONTH:
-Used: {user_profile.get('used_messages', 0)} AI generations
-Remaining: {remaining} AI generations
+*Plan:* Active Subscription
+*Content Type:* {output_type.replace('_', ' ').title()}
+*📈 USAGE THIS MONTH:*
+*Used:* {user_profile.get('used_messages', 0)} AI generations
+*Remaining:* {remaining} AI generations
 
-💡 Reply 'ideas' for social media marketing content"""
+💡 Reply *'ideas'* for social media marketing content"""
             
             else:
                 # User has NO subscription
-                status_message = "You don't have an active subscription. Reply 'subscribe' to choose a plan!"
+                status_message = "You don't have an active subscription. Reply *'subscribe'* to choose a plan!"
             
             # Send the message
             resp.message(status_message)
@@ -1423,26 +1628,31 @@ Remaining: {remaining} AI generations
         return str(resp)
 
     elif 'subscribe' in incoming_msg:
-        plan_selection_message = """Great! Choose your monthly social media marketing plan:
+        plan_selection_message = """*Great! Choose your monthly social media marketing plan:*
 
-🎯 BASIC - KSh 130/month
+*🎯 BASIC - KSh 130/month*
 • 5 social media post ideas per week
-• Quick, actionable content
+• Business Q&A (*'qstn'* command)
+• Customer message analysis (*'4wd'* command)
 • Perfect for getting started
 
-🚀 GROWTH - KSh 249/month  
+*🚀 GROWTH - KSh 249/month*  
 • 15 ideas + weekly content strategy
-• Mini-strategies with platform tips
+• Marketing strategies (*'strat'* command)
+• Business Q&A (*'qstn'* command)
+• Customer message analysis (*'4wd'* command)
 • Ideal for growing businesses
 
-💎 PRO - KSh 599/month
+*💎 PRO - KSh 599/month*
 • Unlimited ideas + full marketing strategies
-• REAL-TIME Google Trends analysis
-• Competitor intelligence reports
+• REAL-TIME Google Trends analysis (*'trends'*)
+• Competitor intelligence reports (*'competitor'*)
+• Business Q&A (*'qstn'* command)
+• Customer message analysis (*'4wd'* command)
 • Weekly market updates (Sun, Wed, Fri)
 • AI-powered market insights
 
-Reply with 'Basic', 'Growth', or 'Pro'."""
+Reply with *'Basic'*, *'Growth'*, or *'Pro'*."""
         
         if phone_number not in user_sessions:
             user_sessions[phone_number] = {}
@@ -1457,20 +1667,71 @@ Reply with 'Basic', 'Growth', or 'Pro'."""
         return str(resp)
     
     elif 'help' in incoming_msg:
-        help_message = """🤖 JengaBIBOT HELP:
-
-• 'ideas' - Generate social media marketing ideas
-• 'strat' - Generate marketing strategies  
-• 'status' - Check subscription  
-• 'subscribe' - Choose a plan
-• 'profile' - Manage your business profile
-• 'hello' - Start over"""
-
-        # Add Pro plan commands if user is on Pro plan
+        # Get user's plan info to show appropriate commands
+        plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
+        plan_type = plan_info.get('plan_type') if plan_info else None
+        
+        # Base commands for all subscribed users
         if check_subscription(user_profile['id']):
-            plan_info = get_user_plan_info(user_profile['id'])
-            if plan_info and plan_info.get('plan_type') == 'pro':
-                help_message += "\n\n🎯 PRO PLAN COMMANDS:\n• 'trends' - Real-time market trends\n• 'competitor' - Competitor analysis"
+            help_message = """*🤖 JengaBIBOT HELP:*"""
+            
+            # Basic Plan Commands
+            if plan_type == 'basic':
+                help_message += """
+• *'ideas'* - 5 social media ideas per week
+• *'qstn'* - Business advice & questions
+• *'4wd'* - Customer message analysis
+• *'status'* - Check your usage
+• *'profile'* - Manage business profile
+• *'subscribe'* - Upgrade your plan"""
+            
+            # Growth Plan Commands
+            elif plan_type == 'growth':
+                help_message += """
+• *'ideas'* - 15 social media ideas per week  
+• *'strat'* - Marketing strategies
+• *'qstn'* - Business advice & questions
+• *'4wd'* - Customer message analysis
+• *'status'* - Check your usage
+• *'profile'* - Manage business profile
+• *'subscribe'* - Upgrade your plan"""
+            
+            # Pro Plan Commands
+            elif plan_type == 'pro':
+                help_message += """
+• *'ideas'* - Unlimited social media ideas
+• *'strat'* - Advanced marketing strategies
+• *'qstn'* - Business advice & questions
+• *'4wd'* - Customer message analysis
+• *'trends'* - Real-time market trends
+• *'competitor'* - Competitor intelligence
+• *'status'* - Check your usage
+• *'profile'* - Manage business profile"""
+            
+            # Fallback for unknown plan types
+            else:
+                help_message += """
+• *'ideas'* - Social media marketing ideas
+• *'strat'* - Marketing strategies
+• *'qstn'* - Business advice & questions
+• *'4wd'* - Customer message analysis
+• *'status'* - Check subscription
+• *'profile'* - Manage business profile"""
+        
+        # No subscription - show basic info
+        else:
+            help_message = """*🤖 JengaBIBOT HELP:*
+
+• *'subscribe'* - Choose a plan to get started
+• *'profile'* - Set up your business profile
+• *'hello'* - Start over
+
+*Available in all plans:*
+• Social media marketing ideas
+• Business Q&A (*'qstn'*)
+• Customer message analysis (*'4wd'*)
+
+Reply *'subscribe'* to unlock all features!"""
 
         resp.message(help_message)
         return str(resp)
@@ -1486,21 +1747,23 @@ Reply with 'Basic', 'Growth', or 'Pro'."""
         # If we reached here without sending a response, send help
         if len(resp.to_string()) < 50:  # No response was built
             print("EMERGENCY: No response was built, sending fallback message")
-            help_message = """🤖 JengaBIBOT HELP:
+            help_message = """*🤖 JengaBIBOT HELP:*
 
-• 'ideas' - Generate social media marketing ideas
-• 'strat' - Generate marketing strategies  
-• 'status' - Check subscription  
-• 'subscribe' - Choose a plan
-• 'profile' - Manage your business profile
-• 'help' - Show this help menu
+• *'ideas'* - Generate social media marketing ideas
+• *'strat'* - Generate marketing strategies  
+• *'qstn'* - Business advice & questions
+• *'4wd'* - Customer message analysis
+• *'status'* - Check subscription  
+• *'subscribe'* - Choose a plan
+• *'profile'* - Manage your business profile
+• *'help'* - Show this help menu
 
 I'm here to help your business with social media marketing!"""
             resp.message(help_message)
     except Exception as e:
         print(f"EMERGENCY FALLBACK ERROR: {e}")
         # Final absolute fallback
-        resp.message("Hello! I'm here to help your business. Reply 'help' to see available commands.")
+        resp.message("Hello! I'm here to help your business. Reply *'help'* to see available commands.")
     
     return str(resp)
 
