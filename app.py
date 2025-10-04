@@ -783,7 +783,15 @@ def check_subscription(profile_id):
 def get_user_plan_info(profile_id):
     """Gets the user's plan type and output_type."""
     try:
+        # == DEBUG ==
+        print(f"🔍 DEBUG PLAN INFO: Querying subscriptions for {profile_id}")
+        # ==END DEBUG ==
+
+
         response = supabase.table('subscriptions').select('plan_type').eq('profile_id', profile_id).eq('is_active', True).execute()
+        # ==DEBUG==
+        print(f"🔍 DEBUG PLAN INFO: Database response data = {response.data}")
+        print(f"🔍 DEBUG PLAN INFO: Response count = {len(response.data)}")
         if response.data:
             plan_data = response.data[0]
             # Add output_type based on plan_type
@@ -1339,13 +1347,26 @@ I need to know about your business first to create personalized marketing conten
     
     elif 'status' in incoming_msg:
         try:
+            
+            # Debug:
+            print(f"🔍 DEBUG STATUS: Checking user {user_profile['id']}")
+            print(f"🔍 DEBUG STATUS: Phone number: {phone_number}")
+
             # Check subscription with better error handling
             has_subscription = check_subscription(user_profile['id'])
             
+            print(f"🔍 DEBUG STATUS: has_subscription = {has_subscription}")
+
             if has_subscription:
                 # User HAS a subscription
                 plan_info = get_user_plan_info(user_profile['id'])
                 
+                # == Debug: ==
+                print(f"🔍 DEBUG STATUS: plan_info = {plan_info}")
+                if plan_info:
+                    print(f"🔍 DEBUG STATUS: plan_info keys = {list(plan_info.keys())}")
+                    print(f"🔍 DEBUG STATUS: plan_type = {plan_info.get('plan_type')}")
+
                 # Safely handle plan_info
                 if plan_info and isinstance(plan_info, dict):
                     plan_type = plan_info.get('plan_type', 'unknown')
