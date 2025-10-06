@@ -726,22 +726,22 @@ def get_remaining_messages(profile_id):
         if response.data:
             data = response.data[0]
             
-            # Handle both correct and typo field names
-            used = data.get('used_messages') or data.get('used_messages', 0)
-            max_msgs = data.get('max_messages') or data.get('max_messages', 20)
+            # FIX: Handle ALL possible field name variations from your logs
+            used = data.get('used_messages') or data.get('used_message') or data.get('message_count', 0)
+            max_msgs = data.get('max_messages') or data.get('has_measaged') or data.get('max_message', 99999)
             
             # Ensure they are integers
             used = int(used) if used is not None else 0
-            max_msgs = int(max_msgs) if max_msgs is not None else 20
+            max_msgs = int(max_msgs) if max_msgs is not None else 99999
             
             remaining = max(0, max_msgs - used)
             print(f"DEBUG: User {profile_id} - Used: {used}, Max: {max_msgs}, Remaining: {remaining}")
             return remaining
             
-        return 15  # Fallback
+        return 99999  # Fallback for Pro users
     except Exception as e:
         print(f"Error getting remaining messages: {e}")
-        return 15  # Fallback to allow messages
+        return 99999  # Fallback to allow messages
 
 def update_message_usage(profile_id, count=1):
     """Update message usage count with error handling"""
@@ -751,14 +751,15 @@ def update_message_usage(profile_id, count=1):
         if response.data:
             data = response.data[0]
             
-            # Handle both correct and typo field names
-            current_used = data.get('used_messages') or data.get('used_messages', 0)
+            # FIX: Handle ALL possible field name variations
+            current_used = data.get('used_messages') or data.get('used_message') or data.get('message_count', 0)
             current_used = int(current_used) if current_used is not None else 0
             
-            # Update both field names to be safe
+            # Update ALL possible field names to be safe
             update_data = {
                 'used_messages': current_used + count,
-                'used_messages': current_used + count
+                'used_message': current_used + count,
+                'message_count': current_used + count
             }
             
             supabase.table('profiles').update(update_data).eq('id', profile_id).execute()
@@ -1381,14 +1382,16 @@ def webhook():
     if not user_profile.get('profile_complete'):
         # If user is already in onboarding, continue with onboarding
         if user_sessions.get(phone_number, {}).get('awaiting_product_selection'):
-         print(f"DEBUG: Processing product selection: '{incoming_msg}'")
+         print(f"🚨 DEBUG: Processing product selection for '{incoming_msg}'")
         selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
-        print(f"DEBUG: Selection result: products={selected_products}, error={error_message}")
+        print(f"🚨 DEBUG: handle_product_selection returned: products={selected_products}, error={error_message}")
         
         if error_message:
+            print(f"🚨 DEBUG: Sending error message")
             resp.message(error_message)
             return str(resp)
         elif selected_products:
+            print(f"🚨 DEBUG: Generating ideas for: {selected_products}")
             user_sessions[phone_number]['awaiting_product_selection'] = False
             
             # Determine output type
@@ -1399,18 +1402,19 @@ def webhook():
                 plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
                 output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
             
-            print(f"DEBUG: Generating {output_type} for {selected_products}")
+            print(f"🚨 DEBUG: Calling generate_realistic_ideas with output_type: {output_type}")
             ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
+            print(f"🚨 DEBUG: generate_realistic_ideas returned: {len(ideas)} characters")
+            
             content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
             response_text = f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
-            print(f"DEBUG: Sending response: {len(response_text)} characters")
             
+            print(f"🚨 DEBUG: Sending response to user")
             resp.message(response_text)
             update_message_usage(user_profile['id'])
             return str(resp)
         else:
-            # EMERGENCY FALLBACK
-            print("DEBUG: EMERGENCY - No products and no error, clearing state")
+            print(f"🚨 DEBUG: EMERGENCY - No products and no error")
             user_sessions[phone_number]['awaiting_product_selection'] = False
             resp.message("I didn't understand your product selection. Please reply 'ideas' to try again.")
             return str(resp)
