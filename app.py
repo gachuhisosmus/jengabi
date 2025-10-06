@@ -1380,9 +1380,39 @@ def webhook():
     # ✅ ENFORCE PROFILE COMPLETION - Check if profile is incomplete
     if not user_profile.get('profile_complete'):
         # If user is already in onboarding, continue with onboarding
-        if user_sessions.get(phone_number, {}).get('onboarding'):
-            onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
-            resp.message(response_message)
+        if user_sessions.get(phone_number, {}).get('awaiting_product_selection'):
+         print(f"DEBUG: Processing product selection: '{incoming_msg}'")
+        selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
+        print(f"DEBUG: Selection result: products={selected_products}, error={error_message}")
+        
+        if error_message:
+            resp.message(error_message)
+            return str(resp)
+        elif selected_products:
+            user_sessions[phone_number]['awaiting_product_selection'] = False
+            
+            # Determine output type
+            if user_sessions.get(phone_number, {}).get('generating_strategy'):
+                output_type = 'strategies'
+                user_sessions[phone_number]['generating_strategy'] = False
+            else:
+                plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
+                output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
+            
+            print(f"DEBUG: Generating {output_type} for {selected_products}")
+            ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
+            content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
+            response_text = f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
+            print(f"DEBUG: Sending response: {len(response_text)} characters")
+            
+            resp.message(response_text)
+            update_message_usage(user_profile['id'])
+            return str(resp)
+        else:
+            # EMERGENCY FALLBACK
+            print("DEBUG: EMERGENCY - No products and no error, clearing state")
+            user_sessions[phone_number]['awaiting_product_selection'] = False
+            resp.message("I didn't understand your product selection. Please reply 'ideas' to try again.")
             return str(resp)
         
         # If user sends 'help' during incomplete profile, provide onboarding help
