@@ -727,7 +727,7 @@ def get_remaining_messages(profile_id):
             data = response.data[0]
             
             # FIX: Handle ALL possible field name variations from your logs
-            used = data.get('used_messages') or data.get('used_message') or data.get('message_count', 0)
+            used = data.get('used_messages') or data.get('used_messages') or data.get('message_count', 0)
             max_msgs = data.get('max_messages') or data.get('has_measaged') or data.get('max_message', 99999)
             
             # Ensure they are integers
@@ -752,13 +752,13 @@ def update_message_usage(profile_id, count=1):
             data = response.data[0]
             
             # FIX: Handle ALL possible field name variations
-            current_used = data.get('used_messages') or data.get('used_message') or data.get('message_count', 0)
+            current_used = data.get('used_messages') or data.get('used_messages') or data.get('message_count', 0)
             current_used = int(current_used) if current_used is not None else 0
             
             # Update ALL possible field names to be safe
             update_data = {
                 'used_messages': current_used + count,
-                'used_message': current_used + count,
+                'used_messages': current_used + count,
                 'message_count': current_used + count
             }
             
@@ -1476,6 +1476,9 @@ Ask me anything about your business operations, marketing, or customer service:"
     # ✅ Handle QSTN question input
     if user_sessions.get(phone_number, {}).get('awaiting_qstn'):
       print(f"🚨 QSTN FOLLOW-UP: Processing question: '{incoming_msg}'")
+    # Ensure the session exists before modifying it
+    if phone_number not in user_sessions:
+        user_sessions[phone_number] = {}
     user_sessions[phone_number]['awaiting_qstn'] = False
     question = incoming_msg.strip()
     
