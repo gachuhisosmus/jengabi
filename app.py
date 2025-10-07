@@ -1698,8 +1698,8 @@ Paste or forward the customer message now:""")
 *Content Type:* {output_type.replace('_', ' ').title()}
 
 *📈 USAGE THIS MONTH:*
-*Used:* {user_profile.get('used_messages', 0)} BI generations
-*Remaining:* {remaining} BI generations
+*Used:* {user_profile.get('used_messages', 0)} AI generations
+*Remaining:* {remaining} AI generations
 
 💡 Reply *'ideas'* for social media marketing content"""
                     
@@ -1713,8 +1713,8 @@ Paste or forward the customer message now:""")
 *Plan:* Active Subscription
 *Content Type:* {output_type.replace('_', ' ').title()}
 *📈 USAGE THIS MONTH:*
-*Used:* {user_profile.get('used_messages', 0)} BI generations
-*Remaining:* {remaining} BI generations
+*Used:* {user_profile.get('used_messages', 0)} AI generations
+*Remaining:* {remaining} AI generations
 
 💡 Reply *'ideas'* for social media marketing content"""
             
