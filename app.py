@@ -727,7 +727,7 @@ def get_remaining_messages(profile_id):
             data = response.data[0]
             
             # FIX: Handle ALL possible field name variations from your logs
-            used = data.get('used_messages') or data.get('used_messages') or data.get('message_count', 0)
+            used = data.get('used_messages') or data.get('used_message') or data.get('message_count', 0)
             max_msgs = data.get('max_messages') or data.get('has_measaged') or data.get('max_message', 99999)
             
             # Ensure they are integers
@@ -752,13 +752,13 @@ def update_message_usage(profile_id, count=1):
             data = response.data[0]
             
             # FIX: Handle ALL possible field name variations
-            current_used = data.get('used_messages') or data.get('used_messages') or data.get('message_count', 0)
+            current_used = data.get('used_messages') or data.get('used_message') or data.get('message_count', 0)
             current_used = int(current_used) if current_used is not None else 0
             
             # Update ALL possible field names to be safe
             update_data = {
                 'used_messages': current_used + count,
-                'used_messages': current_used + count,
+                'used_message': current_used + count,
                 'message_count': current_used + count
             }
             
@@ -1382,7 +1382,7 @@ def webhook():
     if not user_profile.get('profile_complete'):
         # If user is already in onboarding, continue with onboarding
         if user_sessions.get(phone_number, {}).get('awaiting_product_selection'):
-           print(f"🚨 DEBUG: Processing product selection for '{incoming_msg}'")
+          print(f"🚨 DEBUG: Processing product selection for '{incoming_msg}'")
         selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
         print(f"🚨 DEBUG: handle_product_selection returned: products={selected_products}, error={error_message}")
         
@@ -1448,6 +1448,8 @@ I need to know about your business first to create personalized marketing conten
             user_sessions[phone_number]['awaiting_custom_product'] = False
             user_sessions[phone_number]['adding_products'] = False
             user_sessions[phone_number]['managing_profile'] = False
+            user_sessions[phone_number]['awaiting_qstn'] = False
+            user_sessions[phone_number]['awaiting_4wd'] = False
     
     # ✅ Handle QSTN command (NEW - Available for ALL plans)
     if incoming_msg.strip() == 'qstn':
@@ -1473,18 +1475,24 @@ Ask me anything about your business operations, marketing, or customer service:"
     
     # ✅ Handle QSTN question input
     if user_sessions.get(phone_number, {}).get('awaiting_qstn'):
-        user_sessions[phone_number]['awaiting_qstn'] = False
-        question = incoming_msg.strip()
-        
-        if not question or len(question) < 5:
-            resp.message("Please ask a specific business question (at least 5 characters). Reply 'qstn' to try again.")
-            return str(resp)
-        
-        # Generate business advice
-        qstn_response = handle_qstn_command(phone_number, user_profile, question)
-        resp.message(qstn_response)
-        update_message_usage(user_profile['id'])
+      print(f"🚨 QSTN FOLLOW-UP: Processing question: '{incoming_msg}'")
+    user_sessions[phone_number]['awaiting_qstn'] = False
+    question = incoming_msg.strip()
+    
+    if not question or len(question) < 5:
+        print("🚨 QSTN ERROR: Question too short")
+        resp.message("Please ask a specific business question (at least 5 characters). Reply 'qstn' to try again.")
         return str(resp)
+    
+    print("🚨 QSTN: Generating business advice...")
+    # Generate business advice
+    qstn_response = handle_qstn_command(phone_number, user_profile, question)
+    print(f"🚨 QSTN: Response generated, length: {len(qstn_response)}")
+    
+    resp.message(qstn_response)
+    update_message_usage(user_profile['id'])
+    print("🚨 QSTN: Response sent to user")
+    return str(resp)
     
     # ✅ Handle 4WD command (NEW - Available for ALL plans)
     if incoming_msg.strip() == '4wd':
@@ -1516,18 +1524,24 @@ Paste or forward the customer message now:""")
     
     # ✅ Handle 4WD message input
     if user_sessions.get(phone_number, {}).get('awaiting_4wd'):
-        user_sessions[phone_number]['awaiting_4wd'] = False
-        customer_message = incoming_msg.strip()
-        
-        if not customer_message or len(customer_message) < 5:
-            resp.message("Please provide a customer message to analyze (at least 5 characters). Reply '4wd' to try again.")
-            return str(resp)
-        
-        # Generate customer message analysis
-        analysis_response = handle_4wd_command(phone_number, user_profile, customer_message)
-        resp.message(analysis_response)
-        update_message_usage(user_profile['id'])
+      print(f"🚨 4WD FOLLOW-UP: Processing customer message: '{incoming_msg}'")
+    user_sessions[phone_number]['awaiting_4wd'] = False
+    customer_message = incoming_msg.strip()
+    
+    if not customer_message or len(customer_message) < 5:
+        print("🚨 4WD ERROR: Message too short")
+        resp.message("Please provide a customer message to analyze (at least 5 characters). Reply '4wd' to try again.")
         return str(resp)
+    
+    print("🚨 4WD: Analyzing customer message...")
+    # Generate customer message analysis
+    analysis_response = handle_4wd_command(phone_number, user_profile, customer_message)
+    print(f"🚨 4WD: Analysis generated, length: {len(analysis_response)}")
+    
+    resp.message(analysis_response)
+    update_message_usage(user_profile['id'])
+    print("🚨 4WD: Response sent to user")
+    return str(resp)
     
     # ✅ Handle NEW Pro plan commands
     if incoming_msg.strip() == 'trends':
