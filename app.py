@@ -1476,10 +1476,14 @@ Ask me anything about your business operations, marketing, or customer service:"
     # ✅ Handle QSTN question input
     if user_sessions.get(phone_number, {}).get('awaiting_qstn'):
       print(f"🚨 QSTN FOLLOW-UP: Processing question: '{incoming_msg}'")
-    # Ensure the session exists before modifying it
+    
+    # Ensure session exists
     if phone_number not in user_sessions:
         user_sessions[phone_number] = {}
+    
+    # ALWAYS clear the QSTN state first to prevent trapping user
     user_sessions[phone_number]['awaiting_qstn'] = False
+    
     question = incoming_msg.strip()
     
     if not question or len(question) < 5:
@@ -1528,7 +1532,14 @@ Paste or forward the customer message now:""")
     # ✅ Handle 4WD message input
     if user_sessions.get(phone_number, {}).get('awaiting_4wd'):
       print(f"🚨 4WD FOLLOW-UP: Processing customer message: '{incoming_msg}'")
+    
+    # Ensure session exists
+    if phone_number not in user_sessions:
+        user_sessions[phone_number] = {}
+    
+    # ALWAYS clear the 4WD state first
     user_sessions[phone_number]['awaiting_4wd'] = False
+    
     customer_message = incoming_msg.strip()
     
     if not customer_message or len(customer_message) < 5:
