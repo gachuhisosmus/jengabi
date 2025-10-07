@@ -1373,51 +1373,49 @@ def webhook():
         return str(resp)
     
     # DEBUG: Log user profile status
-    
     print(f"DEBUG: User profile complete: {user_profile.get('profile_complete')}")
     print(f"DEBUG: User message count: {user_profile.get('used_messages')} / {user_profile.get('max_messages')}")
     
-    
     # ✅ ENFORCE PROFILE COMPLETION - Check if profile is incomplete
     if not user_profile.get('profile_complete'):
-        # If user is already in onboarding, continue with onboarding
+        # If user is already in product selection, continue with that
         if user_sessions.get(phone_number, {}).get('awaiting_product_selection'):
-          print(f"🚨 DEBUG: Processing product selection for '{incoming_msg}'")
-        selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
-        print(f"🚨 DEBUG: handle_product_selection returned: products={selected_products}, error={error_message}")
-        
-        if error_message:
-            print(f"🚨 DEBUG: Sending error message")
-            resp.message(error_message)
-            return str(resp)
-        elif selected_products:
-            print(f"🚨 DEBUG: Generating ideas for: {selected_products}")
-            user_sessions[phone_number]['awaiting_product_selection'] = False
+            print(f"🚨 DEBUG: Processing product selection for '{incoming_msg}'")
+            selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
+            print(f"🚨 DEBUG: handle_product_selection returned: products={selected_products}, error={error_message}")
             
-            # Determine output type
-            if user_sessions.get(phone_number, {}).get('generating_strategy'):
-                output_type = 'strategies'
-                user_sessions[phone_number]['generating_strategy'] = False
+            if error_message:
+                print(f"🚨 DEBUG: Sending error message")
+                resp.message(error_message)
+                return str(resp)
+            elif selected_products:
+                print(f"🚨 DEBUG: Generating ideas for: {selected_products}")
+                user_sessions[phone_number]['awaiting_product_selection'] = False
+                
+                # Determine output type
+                if user_sessions.get(phone_number, {}).get('generating_strategy'):
+                    output_type = 'strategies'
+                    user_sessions[phone_number]['generating_strategy'] = False
+                else:
+                    plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
+                    output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
+                
+                print(f"🚨 DEBUG: Calling generate_realistic_ideas with output_type: {output_type}")
+                ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
+                print(f"🚨 DEBUG: generate_realistic_ideas returned: {len(ideas)} characters")
+                
+                content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
+                response_text = f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
+                
+                print(f"🚨 DEBUG: Sending response to user")
+                resp.message(response_text)
+                update_message_usage(user_profile['id'])
+                return str(resp)
             else:
-                plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
-                output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
-            
-            print(f"🚨 DEBUG: Calling generate_realistic_ideas with output_type: {output_type}")
-            ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
-            print(f"🚨 DEBUG: generate_realistic_ideas returned: {len(ideas)} characters")
-            
-            content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
-            response_text = f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
-            
-            print(f"🚨 DEBUG: Sending response to user")
-            resp.message(response_text)
-            update_message_usage(user_profile['id'])
-            return str(resp)
-        else:
-            print(f"🚨 DEBUG: EMERGENCY - No products and no error")
-            user_sessions[phone_number]['awaiting_product_selection'] = False
-            resp.message("I didn't understand your product selection. Please reply 'ideas' to try again.")
-            return str(resp)
+                print(f"🚨 DEBUG: EMERGENCY - No products and no error")
+                user_sessions[phone_number]['awaiting_product_selection'] = False
+                resp.message("I didn't understand your product selection. Please reply 'ideas' to try again.")
+                return str(resp)
         
         # If user sends 'help' during incomplete profile, provide onboarding help
         if incoming_msg.strip() == 'help':
@@ -1475,31 +1473,31 @@ Ask me anything about your business operations, marketing, or customer service:"
     
     # ✅ Handle QSTN question input
     if user_sessions.get(phone_number, {}).get('awaiting_qstn'):
-     print(f"🚨 QSTN FOLLOW-UP: Processing question: '{incoming_msg}'")
-    
-    # Ensure session exists
-    if phone_number not in user_sessions:
-        user_sessions[phone_number] = {}
-    
-    # ALWAYS clear the QSTN state first to prevent trapping user
-    user_sessions[phone_number]['awaiting_qstn'] = False
-    
-    question = incoming_msg.strip()
-    
-    if not question or len(question) < 5:
-        print("🚨 QSTN ERROR: Question too short")
-        resp.message("Please ask a specific business question (at least 5 characters). Reply 'qstn' to try again.")
+        print(f"🚨 QSTN FOLLOW-UP: Processing question: '{incoming_msg}'")
+        
+        # Ensure session exists
+        if phone_number not in user_sessions:
+            user_sessions[phone_number] = {}
+        
+        # ALWAYS clear the QSTN state first to prevent trapping user
+        user_sessions[phone_number]['awaiting_qstn'] = False
+        
+        question = incoming_msg.strip()
+        
+        if not question or len(question) < 5:
+            print("🚨 QSTN ERROR: Question too short")
+            resp.message("Please ask a specific business question (at least 5 characters). Reply 'qstn' to try again.")
+            return str(resp)
+        
+        print("🚨 QSTN: Generating business advice...")
+        # Generate business advice
+        qstn_response = handle_qstn_command(phone_number, user_profile, question)
+        print(f"🚨 QSTN: Response generated, length: {len(qstn_response)}")
+        
+        resp.message(qstn_response)
+        update_message_usage(user_profile['id'])
+        print("🚨 QSTN: Response sent to user")
         return str(resp)
-    
-    print("🚨 QSTN: Generating business advice...")
-    # Generate business advice
-    qstn_response = handle_qstn_command(phone_number, user_profile, question)
-    print(f"🚨 QSTN: Response generated, length: {len(qstn_response)}")
-    
-    resp.message(qstn_response)
-    update_message_usage(user_profile['id'])
-    print("🚨 QSTN: Response sent to user")
-    return str(resp)
     
     # ✅ Handle 4WD command (NEW - Available for ALL plans)
     if incoming_msg.strip() == '4wd':
@@ -1531,31 +1529,31 @@ Paste or forward the customer message now:""")
     
     # ✅ Handle 4WD message input
     if user_sessions.get(phone_number, {}).get('awaiting_4wd'):
-      print(f"🚨 4WD FOLLOW-UP: Processing customer message: '{incoming_msg}'")
-    
-    # Ensure session exists
-    if phone_number not in user_sessions:
-        user_sessions[phone_number] = {}
-    
-    # ALWAYS clear the 4WD state first
-    user_sessions[phone_number]['awaiting_4wd'] = False
-    
-    customer_message = incoming_msg.strip()
-    
-    if not customer_message or len(customer_message) < 5:
-        print("🚨 4WD ERROR: Message too short")
-        resp.message("Please provide a customer message to analyze (at least 5 characters). Reply '4wd' to try again.")
+        print(f"🚨 4WD FOLLOW-UP: Processing customer message: '{incoming_msg}'")
+        
+        # Ensure session exists
+        if phone_number not in user_sessions:
+            user_sessions[phone_number] = {}
+        
+        # ALWAYS clear the 4WD state first
+        user_sessions[phone_number]['awaiting_4wd'] = False
+        
+        customer_message = incoming_msg.strip()
+        
+        if not customer_message or len(customer_message) < 5:
+            print("🚨 4WD ERROR: Message too short")
+            resp.message("Please provide a customer message to analyze (at least 5 characters). Reply '4wd' to try again.")
+            return str(resp)
+        
+        print("🚨 4WD: Analyzing customer message...")
+        # Generate customer message analysis
+        analysis_response = handle_4wd_command(phone_number, user_profile, customer_message)
+        print(f"🚨 4WD: Analysis generated, length: {len(analysis_response)}")
+        
+        resp.message(analysis_response)
+        update_message_usage(user_profile['id'])
+        print("🚨 4WD: Response sent to user")
         return str(resp)
-    
-    print("🚨 4WD: Analyzing customer message...")
-    # Generate customer message analysis
-    analysis_response = handle_4wd_command(phone_number, user_profile, customer_message)
-    print(f"🚨 4WD: Analysis generated, length: {len(analysis_response)}")
-    
-    resp.message(analysis_response)
-    update_message_usage(user_profile['id'])
-    print("🚨 4WD: Response sent to user")
-    return str(resp)
     
     # ✅ Handle NEW Pro plan commands
     if incoming_msg.strip() == 'trends':
@@ -1612,7 +1610,7 @@ Paste or forward the customer message now:""")
         if error_message:
             resp.message(error_message)
             return str(resp)
-        if selected_products:
+        elif selected_products:
             user_sessions[phone_number]['awaiting_product_selection'] = False
             
             # Check if we're generating strategies specifically
@@ -1628,6 +1626,11 @@ Paste or forward the customer message now:""")
             content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
             resp.message(f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:\n\n{ideas}")
             update_message_usage(user_profile['id'])
+            return str(resp)
+        else:
+            # EMERGENCY FALLBACK - Clear the state and provide error message
+            user_sessions[phone_number]['awaiting_product_selection'] = False
+            resp.message("I didn't understand your product selection. Please reply 'ideas' or 'strat' to try again.")
             return str(resp)
     
     # ✅ Check for existing users without products
