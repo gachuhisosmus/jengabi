@@ -1404,7 +1404,7 @@ def webhook():
                 print(f"🚨 DEBUG: Sending error message")
                 resp.message(error_message)
                 return str(resp)
-            elif selected_products:
+            if selected_products:
                 print(f"🚨 DEBUG: Generating ideas for: {selected_products}")
                 user_sessions[phone_number]['awaiting_product_selection'] = False
                 
