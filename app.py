@@ -705,7 +705,7 @@ def generate_realistic_ideas(user_profile, products, output_type='ideas', num_id
                 {"role": "system", "content": "You are a practical marketing expert for African small businesses. Create realistic, actionable social media marketing content for platforms like TikTok, WhatsApp, Facebook, Instagram, Twitter that drive measurable results."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=400 if output_type == 'strategies' else 300,
+            max_tokens=300 if output_type == 'strategies' else 300,
             temperature=0.8,
         )
         
@@ -766,6 +766,20 @@ def update_message_usage(profile_id, count=1):
             print(f"DEBUG: Updated message usage for {profile_id} to {current_used + count}")
     except Exception as e:
         print(f"Error updating message usage: {e}")
+        
+def truncate_message(content, max_length=1500):
+    """Ensure messages don't exceed WhatsApp limits"""
+    if len(content) <= max_length:
+        return content
+    
+    # Find a good truncation point
+    truncate_point = content[:max_length].rfind('\n')
+    if truncate_point == -1:
+        truncate_point = content[:max_length].rfind('. ')
+    if truncate_point == -1:
+        truncate_point = max_length
+    
+    return content[:truncate_point] + "...\n\n💡 Message too long. Reply for more ideas!"        
 
 # ===== NEW QSTN COMMAND FUNCTION =====
 
@@ -809,7 +823,7 @@ def handle_qstn_command(phone_number, user_profile, question):
                 {"role": "system", "content": "You are a practical business consultant for Kenyan small businesses. Provide specific, actionable advice that is realistic and culturally appropriate."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=400,
+            max_tokens=300,
             temperature=0.7,
         )
         
@@ -1359,11 +1373,13 @@ def get_full_profile_summary(user_profile):
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    print(f"🔍 WEBHOOK CALLED: {datetime.now()}")
     print(f"Raw request values: {dict(request.values)}")
     incoming_msg = request.values.get('Body', '').lower()
     phone_number = request.values.get('From', '')
     
     print(f"DEBUG: Received message '{incoming_msg}' from {phone_number}")
+    print(f"🔍 USER SESSION STATE: {user_sessions.get(phone_number, {})}")
     
     resp = MessagingResponse()
     user_profile = get_or_create_profile(phone_number)
@@ -1606,11 +1622,19 @@ Paste or forward the customer message now:""")
     
     # Handle product selection
     if user_sessions.get(phone_number, {}).get('awaiting_product_selection'):
+        # DEBUG
+        print(f"🚨 PRODUCT SELECTION: Processing '{incoming_msg}'")
         selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
+        # DEBUG
+        print(f"🚨 PRODUCT SELECTION RESULT: products={selected_products}, error={error_message}")
         if error_message:
+            #DEBUG
+            print(f"🚨 Sending error message: {error_message}")
             resp.message(error_message)
             return str(resp)
         elif selected_products:
+            # DEBUG
+            print(f"🚨 Generating ideas for: {selected_products}")
             user_sessions[phone_number]['awaiting_product_selection'] = False
             
             # Check if we're generating strategies specifically
@@ -1621,14 +1645,32 @@ Paste or forward the customer message now:""")
                 # Get user's plan type to determine output type
                 plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
                 output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
+                
+                # DEBUG
+                print(f"🚨 Calling generate_realistic_ideas with output_type: {output_type}")
             
             ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
+            # DEBUG
+            print(f"🚨 IDEAS GENERATED: {len(ideas)} characters")
+            print(f"🚨 IDEAS PREVIEW: {ideas[:200]}...")
+            
+            # ✅ ADD MESSAGE LENGTH CHECK AND TRUNCATION
+        if len(ideas) > 1600:
+            print("🚨 WARNING: Message too long, truncating...")
+            ideas = truncate_message(ideas)
+            print(f"🚨 TRUNCATED IDEAS LENGTH: {len(ideas)} characters")
+            
             content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
             resp.message(f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:\n\n{ideas}")
+            
+            print(f"🚨 FINAL RESPONSE LENGTH: {len(response_text)} characters")
+            print(f"🚨 SENDING RESPONSE TO USER")
+            resp.message(response_text)
             update_message_usage(user_profile['id'])
             return str(resp)
         else:
             # EMERGENCY FALLBACK - Clear the state and provide error message
+            print("🚨 EMERGENCY: No products and no error")
             user_sessions[phone_number]['awaiting_product_selection'] = False
             resp.message("I didn't understand your product selection. Please reply 'ideas' or 'strat' to try again.")
             return str(resp)
