@@ -887,7 +887,7 @@ def handle_4wd_command(phone_number, user_profile, customer_message):
                 {"role": "system", "content": "You are a customer experience expert for Kenyan small businesses. Analyze customer messages and provide practical, actionable insights."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=500,
+            max_tokens=300,
             temperature=0.7,
         )
         
