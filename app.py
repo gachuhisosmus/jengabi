@@ -1622,54 +1622,58 @@ Paste or forward the customer message now:""")
     
     # Handle product selection
     if user_sessions.get(phone_number, {}).get('awaiting_product_selection'):
+        # DEBUG
         print(f"🚨 PRODUCT SELECTION: Processing '{incoming_msg}'")
         selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
+        # DEBUG
         print(f"🚨 PRODUCT SELECTION RESULT: products={selected_products}, error={error_message}")
-    
-        # ✅ FIX: Use SEPARATE if statements, NOT elif
         if error_message:
-           print(f"🚨 PATH: ERROR - Sending error message: {error_message}")
-           resp.message(error_message)
-           return str(resp)
-    
-        # ✅ FIX: This should be a SEPARATE if statement
+            #DEBUG
+            print(f"🚨 Sending error message: {error_message}")
+            resp.message(error_message)
+            return str(resp)
         if selected_products:
-           print(f"🚨 PATH: SUCCESS - Processing {len(selected_products)} products")
-           user_sessions[phone_number]['awaiting_product_selection'] = False
-        
-           # Check if we're generating strategies specifically
-           if user_sessions.get(phone_number, {}).get('generating_strategy'):
-            output_type = 'strategies'
-            user_sessions[phone_number]['generating_strategy'] = False
-           else:
-            # Get user's plan type to determine output type
-            plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
-            output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
-        
-           print(f"🚨 Calling generate_realistic_ideas with output_type: {output_type}")
-           ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
-           print(f"🚨 IDEAS GENERATED: {len(ideas)} characters")
-        
-        # ✅ ADD MESSAGE LENGTH CHECK AND TRUNCATION
+            # DEBUG
+            print(f"🚨 Generating ideas for: {selected_products}")
+            user_sessions[phone_number]['awaiting_product_selection'] = False
+            
+            # Check if we're generating strategies specifically
+            if user_sessions.get(phone_number, {}).get('generating_strategy'):
+                output_type = 'strategies'
+                user_sessions[phone_number]['generating_strategy'] = False  # Clear the flag
+            else:
+                # Get user's plan type to determine output type
+                plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
+                output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
+                
+                # DEBUG
+                print(f"🚨 Calling generate_realistic_ideas with output_type: {output_type}")
+            
+            ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
+            # DEBUG
+            print(f"🚨 IDEAS GENERATED: {len(ideas)} characters")
+            print(f"🚨 IDEAS PREVIEW: {ideas[:200]}...")
+            
+            # ✅ ADD MESSAGE LENGTH CHECK AND TRUNCATION
         if len(ideas) > 1600:
             print("🚨 WARNING: Message too long, truncating...")
             ideas = truncate_message(ideas)
             print(f"🚨 TRUNCATED IDEAS LENGTH: {len(ideas)} characters")
-        
-        content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
-        response_text = f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
-        
-        print(f"🚨 FINAL RESPONSE LENGTH: {len(response_text)} characters")
-        print(f"🚨 SENDING RESPONSE TO USER")
-        resp.message(response_text)
-        update_message_usage(user_profile['id'])
-        print("🚨 SUCCESS: Response sent successfully!")
-        return str(resp)
-    else:
-        print("🚨 PATH: EMERGENCY - No products and no error")
-        user_sessions[phone_number]['awaiting_product_selection'] = False
-        resp.message("I didn't understand your product selection. Please reply 'ideas' to try again.")
-        return str(resp)
+            
+            content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
+            resp.message(f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:\n\n{ideas}")
+            
+            print(f"🚨 FINAL RESPONSE LENGTH: {len(response_text)} characters")
+            print(f"🚨 SENDING RESPONSE TO USER")
+            resp.message(response_text)
+            update_message_usage(user_profile['id'])
+            return str(resp)
+        else:
+            # EMERGENCY FALLBACK - Clear the state and provide error message
+            print("🚨 EMERGENCY: No products and no error")
+            user_sessions[phone_number]['awaiting_product_selection'] = False
+            resp.message("I didn't understand your product selection. Please reply 'ideas' or 'strat' to try again.")
+            return str(resp)
     
     # ✅ Check for existing users without products
     if (user_profile.get('profile_complete') and 
