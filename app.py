@@ -1220,6 +1220,7 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
 
 def start_product_management(phone_number, user_profile):
     """Start product management sub-menu"""
+    session = ensure_user_session(phone_number)
     current_products = user_profile.get('business_products', [])
     products_list = "\n".join([f"   {i+1}. {product}" for i, product in enumerate(current_products)]) if current_products else "   No products yet"
     
@@ -1238,44 +1239,47 @@ Options:
 
 Reply with a number (1-5):
 """
-    user_sessions[phone_number]['profile_step'] = 'product_menu'
+    session['profile_step'] = 'product_menu'
     return False, menu
 
 def handle_product_management(phone_number, incoming_msg, user_profile):
     """Handle product management actions"""
-    step = user_sessions[phone_number].get('profile_step', 'product_menu')
+    session = ensure_user_session(phone_number)
+    step = session.get('profile_step', 'product_menu')
     current_products = user_profile.get('business_products', [])
+    
+    print(f"🔧 PRODUCT MANAGEMENT DEBUG: step='{step}', incoming_msg='{incoming_msg}', current_products={current_products}")
     
     if step == 'product_menu':
         if incoming_msg == '1':
-            user_sessions[phone_number]['profile_step'] = 'adding_product'
+            session['profile_step'] = 'adding_product'
             return False, "What product would you like to add? (Reply with product name)"
         
         elif incoming_msg == '2':
             if not current_products:
-                user_sessions[phone_number]['profile_step'] = 'product_menu'
+                session['profile_step'] = 'product_menu'
                 return False, "❌ No products to remove.\n\nWhat would you like to do? (Reply 1-5)"
             
             products_list = "\n".join([f"{i+1}. {product}" for i, product in enumerate(current_products)])
-            user_sessions[phone_number]['profile_step'] = 'removing_product'
+            session['profile_step'] = 'removing_product'
             return False, f"Which product would you like to remove?\n\n{products_list}\n\nReply with the product number:"
         
         elif incoming_msg == '3':
             if not current_products:
-                user_sessions[phone_number]['profile_step'] = 'product_menu'
+                session['profile_step'] = 'product_menu'
                 return False, "❌ No products to edit.\n\nWhat would you like to do? (Reply 1-5)"
             
             products_list = "\n".join([f"{i+1}. {product}" for i, product in enumerate(current_products)])
-            user_sessions[phone_number]['profile_step'] = 'editing_product'
-            user_sessions[phone_number]['editing_index'] = None
+            session['profile_step'] = 'editing_product'
+            session['editing_index'] = None
             return False, f"Which product would you like to edit?\n\n{products_list}\n\nReply with the product number:"
         
         elif incoming_msg == '4':
-            user_sessions[phone_number]['profile_step'] = 'confirm_clear'
+            session['profile_step'] = 'confirm_clear'
             return False, "⚠️ Are you sure you want to clear ALL products? This cannot be undone.\n\nReply 'YES' to confirm or 'NO' to cancel."
         
         elif incoming_msg == '5':
-            user_sessions[phone_number]['profile_step'] = 'menu'
+            session['profile_step'] = 'menu'
             return start_profile_management(phone_number, user_profile)
         
         else:
@@ -1284,6 +1288,7 @@ def handle_product_management(phone_number, incoming_msg, user_profile):
     elif step == 'adding_product':
         new_product = incoming_msg.strip()
         if new_product:
+            # Add the new product
             updated_products = current_products + [new_product]
             # Save to database
             try:
@@ -1291,11 +1296,31 @@ def handle_product_management(phone_number, incoming_msg, user_profile):
                     'business_products': updated_products
                 }).eq('id', user_profile['id']).execute()
                 user_profile['business_products'] = updated_products
-                user_sessions[phone_number]['profile_step'] = 'product_menu'
-                return False, f"✅ '{new_product}' added successfully!\n\nWhat would you like to do next? (Reply 1-5)"
+                session['profile_step'] = 'product_menu'
+                
+                # Return to product menu with success message
+                products_list = "\n".join([f"   {i+1}. {product}" for i, product in enumerate(updated_products)]) if updated_products else "   No products yet"
+                menu = f"""
+✅ '{new_product}' added successfully!
+
+📦 MANAGE YOUR PRODUCTS:
+
+Current Products:
+{products_list}
+
+Options:
+1. ➕ Add New Product
+2. ❌ Remove Product
+3. ✏️ Edit Product
+4. 🗑️ Clear All Products
+5. ↩️ Back to Profile Menu
+
+Reply with a number (1-5):
+"""
+                return False, menu
             except Exception as e:
                 print(f"Error adding product: {e}")
-                user_sessions[phone_number]['profile_step'] = 'product_menu'
+                session['profile_step'] = 'product_menu'
                 return False, f"❌ Error adding product. Please try again.\n\nWhat would you like to do? (Reply 1-5)"
         else:
             return False, "Please enter a valid product name."
@@ -1313,11 +1338,31 @@ def handle_product_management(phone_number, incoming_msg, user_profile):
                         'business_products': updated_products
                     }).eq('id', user_profile['id']).execute()
                     user_profile['business_products'] = updated_products
-                    user_sessions[phone_number]['profile_step'] = 'product_menu'
-                    return False, f"✅ '{removed_product}' removed successfully!\n\nWhat would you like to do next? (Reply 1-5)"
+                    session['profile_step'] = 'product_menu'
+                    
+                    # Return to product menu with success message
+                    products_list = "\n".join([f"   {i+1}. {product}" for i, product in enumerate(updated_products)]) if updated_products else "   No products yet"
+                    menu = f"""
+✅ '{removed_product}' removed successfully!
+
+📦 MANAGE YOUR PRODUCTS:
+
+Current Products:
+{products_list}
+
+Options:
+1. ➕ Add New Product
+2. ❌ Remove Product
+3. ✏️ Edit Product
+4. 🗑️ Clear All Products
+5. ↩️ Back to Profile Menu
+
+Reply with a number (1-5):
+"""
+                    return False, menu
                 except Exception as e:
                     print(f"Error removing product: {e}")
-                    user_sessions[phone_number]['profile_step'] = 'product_menu'
+                    session['profile_step'] = 'product_menu'
                     return False, f"❌ Error removing product. Please try again.\n\nWhat would you like to do? (Reply 1-5)"
             else:
                 return False, "Invalid product number. Please try again."
@@ -1325,18 +1370,18 @@ def handle_product_management(phone_number, incoming_msg, user_profile):
             return False, "Please reply with a product number."
     
     elif step == 'editing_product':
-        if user_sessions[phone_number].get('editing_index') is None:
+        if session.get('editing_index') is None:
             if incoming_msg.isdigit():
                 index = int(incoming_msg) - 1
                 if 0 <= index < len(current_products):
-                    user_sessions[phone_number]['editing_index'] = index
+                    session['editing_index'] = index
                     return False, f"Editing '{current_products[index]}'. What should the new product name be?"
                 else:
                     return False, "Invalid product number. Please try again."
             else:
                 return False, "Please reply with a product number."
         else:
-            index = user_sessions[phone_number]['editing_index']
+            index = session['editing_index']
             new_name = incoming_msg.strip()
             if new_name:
                 updated_products = current_products.copy()
@@ -1347,12 +1392,32 @@ def handle_product_management(phone_number, incoming_msg, user_profile):
                         'business_products': updated_products
                     }).eq('id', user_profile['id']).execute()
                     user_profile['business_products'] = updated_products
-                    user_sessions[phone_number]['editing_index'] = None
-                    user_sessions[phone_number]['profile_step'] = 'product_menu'
-                    return False, f"✅ Product updated to '{new_name}' successfully!\n\nWhat would you like to do next? (Reply 1-5)"
+                    session['editing_index'] = None
+                    session['profile_step'] = 'product_menu'
+                    
+                    # Return to product menu with success message
+                    products_list = "\n".join([f"   {i+1}. {product}" for i, product in enumerate(updated_products)]) if updated_products else "   No products yet"
+                    menu = f"""
+✅ Product updated to '{new_name}' successfully!
+
+📦 MANAGE YOUR PRODUCTS:
+
+Current Products:
+{products_list}
+
+Options:
+1. ➕ Add New Product
+2. ❌ Remove Product
+3. ✏️ Edit Product
+4. 🗑️ Clear All Products
+5. ↩️ Back to Profile Menu
+
+Reply with a number (1-5):
+"""
+                    return False, menu
                 except Exception as e:
                     print(f"Error updating product: {e}")
-                    user_sessions[phone_number]['profile_step'] = 'product_menu'
+                    session['profile_step'] = 'product_menu'
                     return False, f"❌ Error updating product. Please try again.\n\nWhat would you like to do? (Reply 1-5)"
             else:
                 return False, "Please enter a valid product name."
@@ -1365,17 +1430,57 @@ def handle_product_management(phone_number, incoming_msg, user_profile):
                     'business_products': []
                 }).eq('id', user_profile['id']).execute()
                 user_profile['business_products'] = []
-                user_sessions[phone_number]['profile_step'] = 'product_menu'
-                return False, "✅ All products cleared successfully!\n\nWhat would you like to do next? (Reply 1-5)"
+                session['profile_step'] = 'product_menu'
+                
+                # Return to product menu with success message
+                menu = f"""
+✅ All products cleared successfully!
+
+📦 MANAGE YOUR PRODUCTS:
+
+Current Products:
+   No products yet
+
+Options:
+1. ➕ Add New Product
+2. ❌ Remove Product
+3. ✏️ Edit Product
+4. 🗑️ Clear All Products
+5. ↩️ Back to Profile Menu
+
+Reply with a number (1-5):
+"""
+                return False, menu
             except Exception as e:
                 print(f"Error clearing products: {e}")
-                user_sessions[phone_number]['profile_step'] = 'product_menu'
+                session['profile_step'] = 'product_menu'
                 return False, f"❌ Error clearing products. Please try again.\n\nWhat would you like to do? (Reply 1-5)"
         else:
-            user_sessions[phone_number]['profile_step'] = 'product_menu'
-            return False, "Product clearance cancelled.\n\nWhat would you like to do? (Reply 1-5)"
+            session['profile_step'] = 'product_menu'
+            # Return to product menu
+            products_list = "\n".join([f"   {i+1}. {product}" for i, product in enumerate(current_products)]) if current_products else "   No products yet"
+            menu = f"""
+Product clearance cancelled.
+
+📦 MANAGE YOUR PRODUCTS:
+
+Current Products:
+{products_list}
+
+Options:
+1. ➕ Add New Product
+2. ❌ Remove Product
+3. ✏️ Edit Product
+4. 🗑️ Clear All Products
+5. ↩️ Back to Profile Menu
+
+Reply with a number (1-5):
+"""
+            return False, menu
     
-    return False, "I didn't understand that. Please choose a valid option."
+    # If we reach here, something went wrong - reset to product menu
+    session['profile_step'] = 'product_menu'
+    return start_product_management(phone_number, user_profile)
 
 def get_full_profile_summary(user_profile):
     """Generate a complete profile summary"""
