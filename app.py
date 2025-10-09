@@ -1160,9 +1160,16 @@ Reply with a number (1-9):
 def handle_profile_management(phone_number, incoming_msg, user_profile):
     """Handle profile management steps"""
     step = user_sessions[phone_number].get('profile_step', 'menu')
+    print(f"🔧 PROFILE MGMT DEBUG: Starting - step='{step}', incoming_msg='{incoming_msg}'")
+    print(f"🔧 PROFILE MGMT DEBUG: Full session = {user_sessions[phone_number]}")
     
     # Profile management menu
     if step == 'menu':
+        print(f"🔧 PROFILE MGMT DEBUG: In menu branch")
+        if incoming_msg == '7':
+            print(f"🔧 PROFILE MGMT DEBUG: User selected 7 - managing products")
+            user_sessions[phone_number]['profile_step'] = 'managing_products'
+            return start_product_management(phone_number, user_profile)
         if incoming_msg == '1':
             user_sessions[phone_number]['profile_step'] = 'updating_business_name'
             user_sessions[phone_number]['updating_field'] = 'business_name'
@@ -1262,6 +1269,8 @@ Options:
 Reply with a number (1-5):
 """
     session['profile_step'] = 'product_menu'
+    print(f"🔧 START PRODUCT MGMT DEBUG: Set profile_step to 'product_menu'")
+    print(f"🔧 START PRODUCT MGMT DEBUG: Session after update = {session}")
     return False, menu
 
 def handle_product_management(phone_number, incoming_msg, user_profile):
@@ -1269,6 +1278,8 @@ def handle_product_management(phone_number, incoming_msg, user_profile):
     session = ensure_user_session(phone_number)
     
     # Debug the current state
+    print(f"🔧 PRODUCT MGMT DEBUG: Starting handle_product_management")
+    print(f"🔧 PRODUCT MGMT DEBUG: session state = {session}")
     print(f"🔧 PRODUCT MANAGEMENT DEBUG: step='{session.get('profile_step')}', incoming_msg='{incoming_msg}'")
     
     # If we don't have a profile_step, assume we're at the product menu
@@ -1276,8 +1287,12 @@ def handle_product_management(phone_number, incoming_msg, user_profile):
     current_products = user_profile.get('business_products', [])
     
     if step == 'product_menu':
+        print(f"🔧 PRODUCT MGMT DEBUG: In product_menu branch")
+        
         if incoming_msg == '1':
+            print(f"🔧 PRODUCT MGMT DEBUG: User selected 1 - setting profile_step to 'adding_product'")
             session['profile_step'] = 'adding_product'
+            print(f"🔧 PRODUCT MGMT DEBUG: Session after update = {session}")
             return False, "What product would you like to add? (Reply with product name)"
         
         elif incoming_msg == '2':
@@ -1746,12 +1761,18 @@ Paste or forward the customer message now:""")
     
     # ✅ Handle profile management flow
     if session.get('managing_profile'):
+        print(f"🔧 WEBHOOK DEBUG: Entering profile management flow")
+        print(f"🔧 WEBHOOK DEBUG: session state = {session}")
+        print(f"🔧 WEBHOOK DEBUG: profile_step = {session.get('profile_step')}, incoming_msg = '{incoming_msg}'")
         # Check if we're in product management but lost the profile_step
         if not session.get('profile_step') and session.get('managing_profile'):
             print("🔧 SESSION RECOVERY: Restoring profile_step to 'menu'")
             session['profile_step'] = 'menu'
         profile_complete, response_message = handle_profile_management(phone_number, incoming_msg, user_profile)
         resp.message(response_message)
+        print(f"🔧 WEBHOOK DEBUG: After handle_profile_management")
+        print(f"🔧 WEBHOOK DEBUG: profile_complete = {profile_complete}, response_message length = {len(response_message)}")
+        print(f"🔧 WEBHOOK DEBUG: Updated session state = {session}")
         return str(resp)
     
     # ✅ Handle users adding products
