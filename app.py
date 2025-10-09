@@ -1499,9 +1499,7 @@ I need to know about your business first to create personalized marketing conten
         
         # Set session state for QSTN question
         session['awaiting_qstn'] = True
-        user_sessions[phone_number] = {}
-        session = ensure_user_session(phone_number)
-        session['awaiting_qstn'] = True
+                
         resp.message("""*🤔 BUSINESS ADVICE REQUEST*
 
 What's your business question? I'll provide personalized advice based on your business type and context.
@@ -1680,10 +1678,10 @@ Paste or forward the customer message now:""")
             print(f"🚨 IDEAS PREVIEW: {ideas[:200]}...")
             
             # ✅ ADD MESSAGE LENGTH CHECK AND TRUNCATION
-        if len(ideas) > 1600:
-            print("🚨 WARNING: Message too long, truncating...")
-            ideas = truncate_message(ideas)
-            print(f"🚨 TRUNCATED IDEAS LENGTH: {len(ideas)} characters")
+            if len(ideas) > 1600:
+              print("🚨 WARNING: Message too long, truncating...")
+              ideas = truncate_message(ideas)
+              print(f"🚨 TRUNCATED IDEAS LENGTH: {len(ideas)} characters")
             
             content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
             resp.message(f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:\n\n{ideas}")
