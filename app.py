@@ -1499,7 +1499,9 @@ I need to know about your business first to create personalized marketing conten
         
         # Set session state for QSTN question
         session['awaiting_qstn'] = True
-                
+        user_sessions[phone_number] = {}
+        session = ensure_user_session(phone_number)
+        session['awaiting_qstn'] = True
         resp.message("""*🤔 BUSINESS ADVICE REQUEST*
 
 What's your business question? I'll provide personalized advice based on your business type and context.
@@ -1645,17 +1647,19 @@ Paste or forward the customer message now:""")
     # Handle product selection
     session = ensure_user_session(phone_number)
     if session.get('awaiting_product_selection'):
-        # DEBUG
-        print(f"🚨 PRODUCT SELECTION: Processing '{incoming_msg}'")
-        selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
-        # DEBUG
-        print(f"🚨 PRODUCT SELECTION RESULT: products={selected_products}, error={error_message}")
-        if error_message:
+       # DEBUG
+       print(f"🚨 PRODUCT SELECTION: Processing '{incoming_msg}'")
+       selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
+        
+       # DEBUG
+       print(f"🚨 PRODUCT SELECTION RESULT: products={selected_products}, error={error_message}")
+       
+       if error_message:
             #DEBUG
             print(f"🚨 Sending error message: {error_message}")
             resp.message(error_message)
             return str(resp)
-        elif selected_products:
+       elif selected_products:
             # DEBUG
             print(f"🚨 Generating ideas for: {selected_products}")
             session['awaiting_product_selection'] = False
@@ -1679,9 +1683,9 @@ Paste or forward the customer message now:""")
             
             # ✅ ADD MESSAGE LENGTH CHECK AND TRUNCATION
             if len(ideas) > 1600:
-              print("🚨 WARNING: Message too long, truncating...")
-              ideas = truncate_message(ideas)
-              print(f"🚨 TRUNCATED IDEAS LENGTH: {len(ideas)} characters")
+               print("🚨 WARNING: Message too long, truncating...")
+               ideas = truncate_message(ideas)
+               print(f"🚨 TRUNCATED IDEAS LENGTH: {len(ideas)} characters")
             
             content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
             resp.message(f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:\n\n{ideas}")
@@ -1691,12 +1695,10 @@ Paste or forward the customer message now:""")
             resp.message(response_text)
             update_message_usage(user_profile['id'])
             return str(resp)
-        else:
+        
+    else:
             # EMERGENCY FALLBACK - Clear the state and provide error message
             print("🚨 EMERGENCY: No products and no error")
-            if phone_number not in user_sessions:
-                user_sessions[phone_number] = {}
-            session = ensure_user_session(phone_number)
             session['awaiting_product_selection'] = False
             resp.message("I didn't understand your product selection. Please reply 'ideas' or 'strat' to try again.")
             return str(resp)
