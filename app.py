@@ -568,7 +568,7 @@ def start_product_selection(phone_number, user_profile):
     product_list = "\n".join([f"{i+1}. {product}" for i, product in enumerate(products)])
     
     return f"""
-🎯 HERE ARE YOUR MAIN BUSINESS PRODUCTS. SELECT THE PRODUCTS YOU WANT TO PROMOTE:
+🎯 SELECT PRODUCTS TO PROMOTE:
 
 {product_list}
 
@@ -581,7 +581,7 @@ Reply with numbers separated by commas (e.g., 1,3,5)
 def handle_product_selection(incoming_msg, user_profile, phone_number):
     """Process product selection input"""
     try:
-        # Ensure session exist
+        # Ensure session exists
         session = ensure_user_session(phone_number)
             
         products = user_profile.get('business_products', [])
@@ -602,7 +602,14 @@ def handle_product_selection(incoming_msg, user_profile, phone_number):
                 elif idx == len(products) + 1:  # "Other"
                     session['awaiting_custom_product'] = True
                     return None, "Please describe the product you want to promote:"
+            else:
+                # Handle non-numeric input gracefully
+                return None, "Please select products using numbers only (e.g., 1,3,5)"
         
+        # FIX: Ensure we always return valid selections or an error
+        if not selections:
+            return None, "Please select valid product numbers (e.g., 1,3,5)"
+            
         return selections, None
         
     except Exception as e:
@@ -1647,57 +1654,47 @@ Paste or forward the customer message now:""")
     # Handle product selection
     session = ensure_user_session(phone_number)
     if session.get('awaiting_product_selection'):
-       # DEBUG
-       print(f"🚨 PRODUCT SELECTION: Processing '{incoming_msg}'")
-       selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
+        print(f"🚨 PRODUCT SELECTION: Processing '{incoming_msg}'")
+        selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
         
-       # DEBUG
-       print(f"🚨 PRODUCT SELECTION RESULT: products={selected_products}, error={error_message}")
+        print(f"🚨 PRODUCT SELECTION RESULT: products={selected_products}, error={error_message}")
        
-       if error_message:
-            #DEBUG
+        if error_message:
             print(f"🚨 Sending error message: {error_message}")
             resp.message(error_message)
             return str(resp)
-       elif selected_products:
-            # DEBUG
+        elif selected_products:
             print(f"🚨 Generating ideas for: {selected_products}")
             session['awaiting_product_selection'] = False
             
             # Check if we're generating strategies specifically
             if session.get('generating_strategy'):
                 output_type = 'strategies'
-                session['generating_strategy'] = False  # Clear the flag
+                session['generating_strategy'] = False
             else:
-                # Get user's plan type to determine output type
                 plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
                 output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
-                
-                # DEBUG
                 print(f"🚨 Calling generate_realistic_ideas with output_type: {output_type}")
             
             ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
-            # DEBUG
             print(f"🚨 IDEAS GENERATED: {len(ideas)} characters")
-            print(f"🚨 IDEAS PREVIEW: {ideas[:200]}...")
             
-            # ✅ ADD MESSAGE LENGTH CHECK AND TRUNCATION
+            # Message length check and truncation
             if len(ideas) > 1600:
-               print("🚨 WARNING: Message too long, truncating...")
-               ideas = truncate_message(ideas)
-               print(f"🚨 TRUNCATED IDEAS LENGTH: {len(ideas)} characters")
+                print("🚨 WARNING: Message too long, truncating...")
+                ideas = truncate_message(ideas)
+                print(f"🚨 TRUNCATED IDEAS LENGTH: {len(ideas)} characters")
             
             content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
-            resp.message(f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:\n\n{ideas}")
+            response_text = f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
             
             print(f"🚨 FINAL RESPONSE LENGTH: {len(response_text)} characters")
             print(f"🚨 SENDING RESPONSE TO USER")
             resp.message(response_text)
             update_message_usage(user_profile['id'])
             return str(resp)
-        
-    else:
-            # EMERGENCY FALLBACK - Clear the state and provide error message
+        else:
+            # FIXED: This was the main issue - the else case wasn't properly indented
             print("🚨 EMERGENCY: No products and no error")
             session['awaiting_product_selection'] = False
             resp.message("I didn't understand your product selection. Please reply 'ideas' or 'strat' to try again.")
