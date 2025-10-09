@@ -39,6 +39,12 @@ supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_
 # Initialize user sessions dictionary
 user_sessions = {}
 
+def ensure_user_session(phone_number):
+    """Ensure user session exists and return it"""
+    if phone_number not in user_sessions:
+        user_sessions[phone_number] = {}
+    return user_sessions[phone_number]
+
 # Define plans
 PLANS = {
     'basic': {
@@ -458,11 +464,13 @@ def get_or_create_profile(phone_number):
 
 def start_business_onboarding(phone_number, user_profile):
     """Start the business profile collection process"""
-    if phone_number not in user_sessions:
-        user_sessions[phone_number] = {}
+    
+    
+    session = ensure_user_session(phone_number)
+        
     
     # Clear any existing state and start fresh
-    user_sessions[phone_number].update({
+    session.update({
         'onboarding': True,
         'onboarding_step': 0,  # Start immediately with first question
         'business_data': {}
@@ -472,6 +480,7 @@ def start_business_onboarding(phone_number, user_profile):
 
 def handle_onboarding_response(phone_number, incoming_msg, user_profile):
     """Handle business profile onboarding steps"""
+    session = ensure_user_session(phone_number)
     # Allow only 'help' command during onboarding
     if incoming_msg.strip() == 'help':
         return False, """🆘 ONBOARDING HELP:
@@ -484,12 +493,15 @@ You can also reply 'cancel' to stop onboarding."""
     
     # Check if user wants to cancel onboarding
     if incoming_msg.strip() == 'cancel':
-        user_sessions[phone_number]['onboarding'] = False
-        user_sessions[phone_number]['onboarding_step'] = 0
+        session['onboarding'] = False
+        session['onboarding_step'] = 0
+        
+        
         return True, "Onboarding cancelled. Reply 'hello' to start again when you're ready."
+    step = session.get('onboarding_step', 0)
+    business_data = session.get('business_data', {})
     
-    step = user_sessions[phone_number].get('onboarding_step', 0)
-    business_data = user_sessions[phone_number].get('business_data', {})
+    
     
     steps = [
         {"question": "What's your business name?", "field": "business_name"},
@@ -534,17 +546,19 @@ Reply 'ideas' to generate social media marketing ideas, 'strat' for strategies, 
 """
     
     # Ask next question
-    user_sessions[phone_number]['onboarding_step'] = step + 1
-    user_sessions[phone_number]['business_data'] = business_data
+    session['onboarding_step'] = step + 1
+    session['business_data'] = business_data
     
     return False, steps[step]["question"]
 
 def start_product_selection(phone_number, user_profile):
     # Initialize a session for the user if it doesn't exist
-    if phone_number not in user_sessions:
-        user_sessions[phone_number] = {}
+    
     """Start product-based marketing idea generation"""
-    user_sessions[phone_number]['awaiting_product_selection'] = True
+    # Always initialize session first
+    
+    session = ensure_user_session(phone_number)
+    session['awaiting_product_selection'] = True
     
     # Get user's products or use default options
     products = user_profile.get('business_products', [])
@@ -567,6 +581,9 @@ Reply with numbers separated by commas (e.g., 1,3,5)
 def handle_product_selection(incoming_msg, user_profile, phone_number):
     """Process product selection input"""
     try:
+        # Ensure session exist
+        session = ensure_user_session(phone_number)
+            
         products = user_profile.get('business_products', [])
         if not products:
             products = ["Main Product", "Service", "Special Offer", "New Arrival"]
@@ -583,7 +600,7 @@ def handle_product_selection(incoming_msg, user_profile, phone_number):
                     selections = products.copy()
                     break
                 elif idx == len(products) + 1:  # "Other"
-                    user_sessions[phone_number]['awaiting_custom_product'] = True
+                    session['awaiting_custom_product'] = True
                     return None, "Please describe the product you want to promote:"
         
         return selections, None
@@ -1378,8 +1395,11 @@ def webhook():
     incoming_msg = request.values.get('Body', '').lower()
     phone_number = request.values.get('From', '')
     
+    # ✅ CRITICAL: Initialize session immediately for EVERY request
+    session = ensure_user_session(phone_number)
+    
     print(f"DEBUG: Received message '{incoming_msg}' from {phone_number}")
-    print(f"🔍 USER SESSION STATE: {user_sessions.get(phone_number, {})}")
+    print(f"🔍 USER SESSION STATE: {session}")
     
     resp = MessagingResponse()
     user_profile = get_or_create_profile(phone_number)
@@ -1395,7 +1415,8 @@ def webhook():
     # ✅ ENFORCE PROFILE COMPLETION - Check if profile is incomplete
     if not user_profile.get('profile_complete'):
         # If user is already in product selection, continue with that
-        if user_sessions.get(phone_number, {}).get('awaiting_product_selection'):
+        session = ensure_user_session(phone_number)
+        if session.get('awaiting_product_selection'):
             print(f"🚨 DEBUG: Processing product selection for '{incoming_msg}'")
             selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
             print(f"🚨 DEBUG: handle_product_selection returned: products={selected_products}, error={error_message}")
@@ -1406,12 +1427,12 @@ def webhook():
                 return str(resp)
             elif selected_products:
                 print(f"🚨 DEBUG: Generating ideas for: {selected_products}")
-                user_sessions[phone_number]['awaiting_product_selection'] = False
+                session['awaiting_product_selection'] = False
                 
                 # Determine output type
-                if user_sessions.get(phone_number, {}).get('generating_strategy'):
+                if session.get('generating_strategy'):
                     output_type = 'strategies'
-                    user_sessions[phone_number]['generating_strategy'] = False
+                    session['generating_strategy'] = False
                 else:
                     plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
                     output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
@@ -1457,13 +1478,18 @@ I need to know about your business first to create personalized marketing conten
     priority_commands = ['ideas', 'strat', 'status', 'subscribe', 'help', 'exit', 'cancel', 'profile', 'trends', 'competitor', 'qstn', '4wd']
     if incoming_msg.strip() in priority_commands:
         if phone_number in user_sessions:
-            user_sessions[phone_number]['onboarding'] = False
-            user_sessions[phone_number]['awaiting_product_selection'] = False
-            user_sessions[phone_number]['awaiting_custom_product'] = False
-            user_sessions[phone_number]['adding_products'] = False
-            user_sessions[phone_number]['managing_profile'] = False
-            user_sessions[phone_number]['awaiting_qstn'] = False
-            user_sessions[phone_number]['awaiting_4wd'] = False
+            session = ensure_user_session(phone_number)
+            # Clear all ongoing states
+            session.update({
+                'onboarding': False,
+                'awaiting_product_selection': False,
+                'awaiting_custom_product': False,
+                'adding_products': False,
+                'managing_profile': False,
+                'awaiting_qstn': False,
+                'awaiting_4wd': False,
+                'generating_strategy': False
+    })
     
     # ✅ Handle QSTN command (NEW - Available for ALL plans)
     if incoming_msg.strip() == 'qstn':
@@ -1472,9 +1498,10 @@ I need to know about your business first to create personalized marketing conten
             return str(resp)
         
         # Set session state for QSTN question
-        if phone_number not in user_sessions:
-            user_sessions[phone_number] = {}
-        user_sessions[phone_number]['awaiting_qstn'] = True
+        session['awaiting_qstn'] = True
+        user_sessions[phone_number] = {}
+        session = ensure_user_session(phone_number)
+        session['awaiting_qstn'] = True
         resp.message("""*🤔 BUSINESS ADVICE REQUEST*
 
 What's your business question? I'll provide personalized advice based on your business type and context.
@@ -1488,15 +1515,15 @@ Ask me anything about your business operations, marketing, or customer service:"
         return str(resp)
     
     # ✅ Handle QSTN question input
-    if user_sessions.get(phone_number, {}).get('awaiting_qstn'):
+    if session.get('awaiting_qstn'):
         print(f"🚨 QSTN FOLLOW-UP: Processing question: '{incoming_msg}'")
         
         # Ensure session exists
-        if phone_number not in user_sessions:
-            user_sessions[phone_number] = {}
+        
+            
         
         # ALWAYS clear the QSTN state first to prevent trapping user
-        user_sessions[phone_number]['awaiting_qstn'] = False
+        session['awaiting_qstn'] = False 
         
         question = incoming_msg.strip()
         
@@ -1522,9 +1549,8 @@ Ask me anything about your business operations, marketing, or customer service:"
             return str(resp)
         
         # Set session state for 4WD message
-        if phone_number not in user_sessions:
-            user_sessions[phone_number] = {}
-        user_sessions[phone_number]['awaiting_4wd'] = True
+        session['awaiting_4wd'] = True
+        
         resp.message("""*📞 CUSTOMER MESSAGE ANALYSIS*
 
 Forward or paste a customer message you'd like me to analyze. I'll provide:
@@ -1544,15 +1570,13 @@ Paste or forward the customer message now:""")
         return str(resp)
     
     # ✅ Handle 4WD message input
-    if user_sessions.get(phone_number, {}).get('awaiting_4wd'):
+    if session.get('awaiting_4wd'):
         print(f"🚨 4WD FOLLOW-UP: Processing customer message: '{incoming_msg}'")
         
-        # Ensure session exists
-        if phone_number not in user_sessions:
-            user_sessions[phone_number] = {}
+        
         
         # ALWAYS clear the 4WD state first
-        user_sessions[phone_number]['awaiting_4wd'] = False
+        session['awaiting_4wd'] = False 
         
         customer_message = incoming_msg.strip()
         
@@ -1583,22 +1607,22 @@ Paste or forward the customer message now:""")
         return str(resp)
     
     # ✅ Handle profile management flow
-    if user_sessions.get(phone_number, {}).get('managing_profile'):
+    if session.get('managing_profile'):
         profile_complete, response_message = handle_profile_management(phone_number, incoming_msg, user_profile)
         resp.message(response_message)
         return str(resp)
     
     # ✅ Handle users adding products
-    if user_sessions.get(phone_number, {}).get('adding_products'):
+    if session.get('adding_products'):
         response = handle_user_without_products(phone_number, user_profile, incoming_msg)
         resp.message(response)
         return str(resp)
     
     # Handle onboarding flow (should not reach here for incomplete profiles due to above check)
-    if user_sessions.get(phone_number, {}).get('onboarding'):
+    if session.get('onboarding'):
         # Allow users to exit onboarding with commands
         if incoming_msg.strip() in priority_commands:
-            user_sessions[phone_number]['onboarding'] = False
+            session['onboarding'] = False
             # Let the message continue to normal processing
         else:
             onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
@@ -1606,9 +1630,9 @@ Paste or forward the customer message now:""")
             return str(resp)
     
     # Handle custom product input
-    if user_sessions.get(phone_number, {}).get('awaiting_custom_product'):
-        user_sessions[phone_number]['custom_product'] = incoming_msg
-        user_sessions[phone_number]['awaiting_custom_product'] = False
+    if session.get('awaiting_custom_product'):
+        session['custom_product'] = incoming_msg
+        session['awaiting_custom_product'] = False
         products = [incoming_msg]
         
         # Get user's plan type to determine output type
@@ -1621,7 +1645,8 @@ Paste or forward the customer message now:""")
         return str(resp)
     
     # Handle product selection
-    if user_sessions.get(phone_number, {}).get('awaiting_product_selection'):
+    session = ensure_user_session(phone_number)
+    if session.get('awaiting_product_selection'):
         # DEBUG
         print(f"🚨 PRODUCT SELECTION: Processing '{incoming_msg}'")
         selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
@@ -1632,15 +1657,15 @@ Paste or forward the customer message now:""")
             print(f"🚨 Sending error message: {error_message}")
             resp.message(error_message)
             return str(resp)
-        if selected_products:
+        elif selected_products:
             # DEBUG
             print(f"🚨 Generating ideas for: {selected_products}")
-            user_sessions[phone_number]['awaiting_product_selection'] = False
+            session['awaiting_product_selection'] = False
             
             # Check if we're generating strategies specifically
-            if user_sessions.get(phone_number, {}).get('generating_strategy'):
+            if session.get('generating_strategy'):
                 output_type = 'strategies'
-                user_sessions[phone_number]['generating_strategy'] = False  # Clear the flag
+                session['generating_strategy'] = False  # Clear the flag
             else:
                 # Get user's plan type to determine output type
                 plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
@@ -1671,7 +1696,10 @@ Paste or forward the customer message now:""")
         else:
             # EMERGENCY FALLBACK - Clear the state and provide error message
             print("🚨 EMERGENCY: No products and no error")
-            user_sessions[phone_number]['awaiting_product_selection'] = False
+            if phone_number not in user_sessions:
+                user_sessions[phone_number] = {}
+            session = ensure_user_session(phone_number)
+            session['awaiting_product_selection'] = False
             resp.message("I didn't understand your product selection. Please reply 'ideas' or 'strat' to try again.")
             return str(resp)
     
@@ -1679,14 +1707,14 @@ Paste or forward the customer message now:""")
     if (user_profile.get('profile_complete') and 
         (not user_profile.get('business_products') or len(user_profile.get('business_products', [])) == 0) and
         incoming_msg.strip() in ['ideas', 'strat'] and
-        not user_sessions.get(phone_number, {}).get('adding_products')):
+        not session.get('adding_products')):
         
         response = handle_user_without_products(phone_number, user_profile, incoming_msg)
         resp.message(response)
         return str(resp)
     
     # Handle plan selection
-    if user_sessions.get(phone_number, {}).get('state') == 'awaiting_plan_selection':
+    if session.get('state') == 'awaiting_plan_selection':
         if 'basic' in incoming_msg:
             selected_plan = 'basic'
         elif 'growth' in incoming_msg:
@@ -1697,10 +1725,10 @@ Paste or forward the customer message now:""")
             resp.message("Please reply with 'Basic', 'Growth', or 'Pro'.")
             return str(resp)
         
-        user_sessions[phone_number]['state'] = None
+        session['state'] = None
         plan_data = PLANS[selected_plan]
         payment_message = f"Excellent choice! To activate your *{selected_plan.capitalize()} Plan*, please send KSh {plan_data['price']} to PayBill XXXX Acc: {phone_number}.\n\nThen, forward the M-Pesa confirmation message to me."
-        user_sessions[phone_number]['selected_plan'] = selected_plan
+        session['selected_plan'] = selected_plan
         resp.message(payment_message)
         return str(resp)
     
@@ -1730,9 +1758,7 @@ Paste or forward the customer message now:""")
             return str(resp)
         
         # For strategies, we'll set a flag to generate strategy content
-        if phone_number not in user_sessions:
-            user_sessions[phone_number] = {}
-        user_sessions[phone_number]['generating_strategy'] = True
+        session['generating_strategy'] = True 
         
         product_message = start_product_selection(phone_number, user_profile)
         resp.message(product_message)
