@@ -40,10 +40,32 @@ supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_
 user_sessions = {}
 
 def ensure_user_session(phone_number):
-    """Ensure user session exists and return it"""
+    """Ensure user session exists and return it - with persistence across restarts"""
     if phone_number not in user_sessions:
         user_sessions[phone_number] = {}
-    return user_sessions[phone_number]
+    
+    # Always ensure the session has the basic structure we expect
+    session = user_sessions[phone_number]
+    
+    # Ensure critical fields exist
+    if 'onboarding' not in session:
+        session['onboarding'] = False
+    if 'awaiting_product_selection' not in session:
+        session['awaiting_product_selection'] = False
+    if 'awaiting_custom_product' not in session:
+        session['awaiting_custom_product'] = False
+    if 'adding_products' not in session:
+        session['adding_products'] = False
+    if 'managing_profile' not in session:
+        session['managing_profile'] = False
+    if 'awaiting_qstn' not in session:
+        session['awaiting_qstn'] = False
+    if 'awaiting_4wd' not in session:
+        session['awaiting_4wd'] = False
+    if 'generating_strategy' not in session:
+        session['generating_strategy'] = False
+    
+    return session
 
 # Define plans
 PLANS = {
@@ -1243,12 +1265,15 @@ Reply with a number (1-5):
     return False, menu
 
 def handle_product_management(phone_number, incoming_msg, user_profile):
-    """Handle product management actions"""
+    """Handle product management actions with robust session handling"""
     session = ensure_user_session(phone_number)
+    
+    # Debug the current state
+    print(f"🔧 PRODUCT MANAGEMENT DEBUG: step='{session.get('profile_step')}', incoming_msg='{incoming_msg}'")
+    
+    # If we don't have a profile_step, assume we're at the product menu
     step = session.get('profile_step', 'product_menu')
     current_products = user_profile.get('business_products', [])
-    
-    print(f"🔧 PRODUCT MANAGEMENT DEBUG: step='{step}', incoming_msg='{incoming_msg}', current_products={current_products}")
     
     if step == 'product_menu':
         if incoming_msg == '1':
@@ -1479,6 +1504,7 @@ Reply with a number (1-5):
             return False, menu
     
     # If we reach here, something went wrong - reset to product menu
+    print(f"🔧 PRODUCT MANAGEMENT ERROR: Unknown step '{step}', resetting to product menu")
     session['profile_step'] = 'product_menu'
     return start_product_management(phone_number, user_profile)
 
@@ -1720,6 +1746,10 @@ Paste or forward the customer message now:""")
     
     # ✅ Handle profile management flow
     if session.get('managing_profile'):
+        # Check if we're in product management but lost the profile_step
+        if not session.get('profile_step') and session.get('managing_profile'):
+            print("🔧 SESSION RECOVERY: Restoring profile_step to 'menu'")
+            session['profile_step'] = 'menu'
         profile_complete, response_message = handle_profile_management(phone_number, incoming_msg, user_profile)
         resp.message(response_message)
         return str(resp)
