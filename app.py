@@ -1246,11 +1246,19 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
         print(f"🔧 PROFILE MGMT DEBUG: Calling handle_product_management")
         return handle_product_management(phone_number, incoming_msg, user_profile)
     
-    # Handle product menu (this is the missing part!)
+    # Handle product menu 
     elif step == 'product_menu':
         print(f"🔧 PROFILE MGMT DEBUG: In product_menu branch, calling handle_product_management")
         return handle_product_management(phone_number, incoming_msg, user_profile)
-    
+        
+    # HANDLE ADDING_PRODUCT
+    elif step == 'adding_product':
+        print(f"🔧 PROFILE MGMT DEBUG: In adding_product branch, calling handle_product_management")
+        return handle_product_management(phone_number, incoming_msg, user_profile)
+    # If we reach here, something went wrong - reset to menu
+    else:
+        print(f"🔧 PROFILE MGMT ERROR: Unknown step '{step}', resetting to menu")
+        user_sessions[phone_number]['profile_step'] = 'menu'
         return False, "I didn't understand that. Please choose a valid option (1-9):"
 
 def start_product_management(phone_number, user_profile):
