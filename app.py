@@ -590,14 +590,14 @@ def start_product_selection(phone_number, user_profile):
     product_list = "\n".join([f"{i+1}. {product}" for i, product in enumerate(products)])
     
     return f"""
-🎯 *SELECT PRODUCTS TO PROMOTE:*
+🎯 SELECT PRODUCTS TO PROMOTE:
 
 {product_list}
 
 {len(products)+1}. All Products
 {len(products)+2}. Other (not listed)
 
-Reply with numbers separated by commas (*e.g., 1,3,5*)
+Reply with numbers separated by commas (e.g., 1,3,5)
 """
 
 def handle_product_selection(incoming_msg, user_profile, phone_number):
@@ -686,10 +686,12 @@ def generate_realistic_ideas(user_profile, products, output_type='ideas', num_id
             - Include a clear call-to-action
             - Make it engaging and compelling
             
-            FORMAT:
-            1. [Idea 1]  
-            2. [Idea 2]
-            3. [Idea 3]
+            FORMAT - RETURN ONLY THIS FORMAT:
+            1. [Idea 1 with emoji]  
+            2. [Idea 2 with emoji]
+            3. [Idea 3 with emoji]
+            
+            DO NOT include strategies, plans, or additional sections.
             """
         elif output_type == 'ideas_strategy':
             prompt = f"""
@@ -703,7 +705,7 @@ def generate_realistic_ideas(user_profile, products, output_type='ideas', num_id
             - Make it practical for small business owners
             - Include emojis and local context
             
-            FORMAT:
+            FORMAT - RETURN ONLY THIS FORMAT:
             🎯 POST IDEAS:
             1. [Idea 1]
             2. [Idea 2]
@@ -727,21 +729,27 @@ def generate_realistic_ideas(user_profile, products, output_type='ideas', num_id
             - Add performance measurement tips
             - Make it actionable and realistic
             
-            FORMAT:
-            📊 *COMPREHENSIVE MARKETING STRATEGY*
+            FORMAT - RETURN ONLY THIS FORMAT:
+            📊 COMPREHENSIVE MARKETING STRATEGY
             
-            🎯 *TARGET AUDIENCE:*
+            🎯 TARGET AUDIENCE:
             • [Audience insight 1]
             • [Audience insight 2]
             
-            📅 *7-DAY CONTENT PLAN:*
+            📅 7-DAY CONTENT PLAN:
             Monday: [Content focus]
             Tuesday: [Content focus]
+            Wenesday: [Content focus]
+            Thursday: [Content focus]
+            Friday: [Content focus]
+            Saturday: [Content focus]
+            Sunday: [Content focus]
             ...
             
-            💡 *ENGAGEMENT TACTICS:*
+            💡 ENGAGEMENT TACTICS:
             • [Tactic 1]
             • [Tactic 2]
+            • [Tactic 3]
             """
         
         # Call the OpenAI API
@@ -1140,7 +1148,7 @@ def start_profile_management(phone_number, user_profile):
 🌐 Website: {user_profile.get('website', 'Not set')}
 🎯 Goals: {user_profile.get('business_marketing_goals', 'Not set')}
 
-📦 *Products:* {', '.join(user_profile.get('business_products', [])) or 'None'}
+📦 Products: {', '.join(user_profile.get('business_products', [])) or 'None'}
 
 *What would you like to update?*
 1. 🏢 Business Name
@@ -1153,7 +1161,7 @@ def start_profile_management(phone_number, user_profile):
 8. 📊 View Full Profile
 9. ↩️ Back to Main Menu
 
-*Reply with a number (1-9):*
+Reply with a number (1-9):
 """
     return profile_summary
 
@@ -1296,7 +1304,7 @@ Options:
 4. 🗑️ Clear All Products
 5. ↩️ Back to Profile Menu
 
-*Reply with a number* (1-5):
+Reply with a number (1-5):
 """
     session['profile_step'] = 'product_menu'
     print(f"🔧 START PRODUCT MGMT DEBUG: Set profile_step to 'product_menu'")
@@ -1390,7 +1398,7 @@ Options:
 4. 🗑️ Clear All Products
 5. ↩️ Back to Profile Menu
 
-*Reply with a number* (1-5):
+Reply with a number (1-5):
 """
                 return False, menu
             except Exception as e:
@@ -1432,7 +1440,7 @@ Options:
 4. 🗑️ Clear All Products
 5. ↩️ Back to Profile Menu
 
-*Reply with a number* (1-5):
+Reply with a number (1-5):
 """
                     return False, menu
                 except Exception as e:
@@ -1487,7 +1495,7 @@ Options:
 4. 🗑️ Clear All Products
 5. ↩️ Back to Profile Menu
 
-*Reply with a number* (1-5):
+Reply with a number (1-5):
 """
                     return False, menu
                 except Exception as e:
@@ -1523,7 +1531,7 @@ Options:
 4. 🗑️ Clear All Products
 5. ↩️ Back to Profile Menu
 
-*Reply with a number* (1-5):
+Reply with a number (1-5):
 """
                 return False, menu
             except Exception as e:
@@ -1549,7 +1557,7 @@ Options:
 4. 🗑️ Clear All Products
 5. ↩️ Back to Profile Menu
 
-*Reply with a number* (1-5):
+Reply with a number (1-5):
 """
             return False, menu
     
@@ -1619,7 +1627,7 @@ def webhook():
                 
                 # Determine output type
                 if session.get('generating_strategy'):
-                    output_type = 'strategies'
+                    output_type = 'ideas_strategy'
                     session['generating_strategy'] = False
                 else:
                     plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
@@ -1944,7 +1952,7 @@ Paste or forward the customer message now:""")
         if remaining <= 0:
             resp.message("You've used all your available AI content generations for this period. Reply 'status' to check your usage.")
             return str(resp)
-        
+                           
         # For strategies, we'll set a flag to generate strategy content
         session['generating_strategy'] = True 
         
