@@ -147,7 +147,7 @@ def build_trend_keywords(business_type):
         'retail': ['shopping deals', 'local stores', 'fashion trends', 'product reviews'],
         'fashion': ['fashion trends', 'clothing styles', 'outfit ideas', 'seasonal fashion'],
         'tech': ['tech gadgets', 'software solutions', 'digital services', 'app development'],
-        'health': ['fitness tips', 'wellness', 'health services', 'medical advice'],
+        'health': ['fitness tips', 'wellness', 'health services', 'medical advices'],
         'education': ['online courses', 'learning resources', 'educational content', 'skill development'],
         'business marketing software': ['marketing software', 'social media tools', 'business automation', 'digital marketing'],
         'marketing': ['digital marketing', 'social media marketing', 'content marketing', 'email marketing'],
@@ -1953,7 +1953,7 @@ Paste or forward the customer message now:""")
         return str(resp)
     
     elif 'hello' in incoming_msg or 'hi' in incoming_msg or 'start' in incoming_msg:
-        resp.message("Hello! Welcome back! Reply *'ideas'* for social media marketing ideas, *'strat'* for marketing strategies, *'qstn'* for business advice, *'4wd'* for customer message analysis, *'status'* to check your subscription, or *'profile'* to manage your business info.")
+        resp.message("Hello! Welcome back! Reply *'ideas'* for social media marketing ideas, *'strat'* for marketing strategies, *'qstn'* for business advices, *'4wd'* for customer message analysis, *'status'* to check your subscription, or *'profile'* to manage your business info.")
         return str(resp)
     
     elif 'status' in incoming_msg:
@@ -2070,7 +2070,7 @@ Reply with *'Basic'*, *'Growth'*, or *'Pro'*."""
             if plan_type == 'basic':
                 help_message += """
 • *'ideas'* - 5 social media ideas per week
-• *'qstn'* - Business advice & questions
+• *'qstn'* - Business advices & questions
 • *'4wd'* - Customer message analysis
 • *'status'* - Check your usage
 • *'profile'* - Manage business profile
@@ -2081,7 +2081,7 @@ Reply with *'Basic'*, *'Growth'*, or *'Pro'*."""
                 help_message += """
 • *'ideas'* - 15 social media ideas per week  
 • *'strat'* - Marketing strategies
-• *'qstn'* - Business advice & questions
+• *'qstn'* - Business advices & questions
 • *'4wd'* - Customer message analysis
 • *'status'* - Check your usage
 • *'profile'* - Manage business profile
@@ -2092,7 +2092,7 @@ Reply with *'Basic'*, *'Growth'*, or *'Pro'*."""
                 help_message += """
 • *'ideas'* - Unlimited social media ideas
 • *'strat'* - Advanced marketing strategies
-• *'qstn'* - Business advice & questions
+• *'qstn'* - Business advices & questions
 • *'4wd'* - Customer message analysis
 • *'trends'* - Real-time market trends
 • *'competitor'* - Competitor intelligence
@@ -2104,7 +2104,7 @@ Reply with *'Basic'*, *'Growth'*, or *'Pro'*."""
                 help_message += """
 • *'ideas'* - Social media marketing ideas
 • *'strat'* - Marketing strategies
-• *'qstn'* - Business advice & questions
+• *'qstn'* - Business advices & questions
 • *'4wd'* - Customer message analysis
 • *'status'* - Check subscription
 • *'profile'* - Manage business profile"""
@@ -2142,7 +2142,7 @@ Reply *'subscribe'* to unlock all features!"""
 
 • *'ideas'* - Generate social media marketing ideas
 • *'strat'* - Generate marketing strategies  
-• *'qstn'* - Business advice & questions
+• *'qstn'* - Business advices & questions
 • *'4wd'* - Customer message analysis
 • *'status'* - Check subscription  
 • *'subscribe'* - Choose a plan
