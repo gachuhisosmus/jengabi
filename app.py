@@ -1635,11 +1635,8 @@ def webhook():
                     session['generating_strategy'] = False
                     print(f"🚨 DEBUG: Setting output_type to 'ideas_strategy' for strat command")
                 else:
-                    plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
-                    if plan_info and plan_info.get('plan_type') == 'pro':
-                        output_type = 'ideas_strategy'
-                    else:
-                        output_type = 'ideas_strategy'                        
+                    output_type = 'ideas_strategy'
+                                           
                                     
                 print(f"🚨 DEBUG: Calling generate_realistic_ideas with output_type: {output_type}")
                 ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
