@@ -590,7 +590,7 @@ def start_product_selection(phone_number, user_profile):
     product_list = "\n".join([f"{i+1}. {product}" for i, product in enumerate(products)])
     
     return f"""
-🎯 SELECT PRODUCTS TO PROMOTE:
+🎯 *SELECT PRODUCTS TO PROMOTE:*
 
 {product_list}
 
@@ -730,23 +730,23 @@ def generate_realistic_ideas(user_profile, products, output_type='ideas', num_id
             - Make it actionable and realistic
             
             FORMAT - RETURN ONLY THIS FORMAT:
-            📊 COMPREHENSIVE MARKETING STRATEGY
+            📊 *COMPREHENSIVE MARKETING STRATEGY*
             
-            🎯 TARGET AUDIENCE:
+            🎯 *TARGET AUDIENCE:*
             • [Audience insight 1]
             • [Audience insight 2]
             
-            📅 7-DAY CONTENT PLAN:
-            Monday: [Content focus]
-            Tuesday: [Content focus]
-            Wenesday: [Content focus]
-            Thursday: [Content focus]
-            Friday: [Content focus]
-            Saturday: [Content focus]
-            Sunday: [Content focus]
+            📅 *7-DAY CONTENT PLAN:*
+            *Monday:* [Content focus]
+            *Tuesday:* [Content focus]
+            *Wenesday:* [Content focus]
+            *Thursday:* [Content focus]
+            *Friday:* [Content focus]
+            *Saturday:* [Content focus]
+            *Sunday:* [Content focus]
             ...
             
-            💡 ENGAGEMENT TACTICS:
+            💡 *ENGAGEMENT TACTICS:*
             • [Tactic 1]
             • [Tactic 2]
             • [Tactic 3]
@@ -1053,7 +1053,7 @@ def get_intelligent_response(incoming_msg, user_profile):
     
     # Default helpful response
     help_options = "Reply *'ideas'* for social media marketing ideas, *'strat'* for strategies, *'qstn'* for business advice, *'4wd'* for customer message analysis, *'status'* for subscription info, *'profile'* to manage your business info, or *'help'* for more options."
-    return f"I'm here to help your*{business_context}* business with social media marketing! {help_options}"
+    return f"I'm here to help your{business_context} business with social media marketing! {help_options}"
 
 def check_subscription(profile_id):
     """Checks if the user has an active subscription."""
