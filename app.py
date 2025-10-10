@@ -1255,6 +1255,12 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
     elif step == 'adding_product':
         print(f"🔧 PROFILE MGMT DEBUG: In adding_product branch, calling handle_product_management")
         return handle_product_management(phone_number, incoming_msg, user_profile)
+        
+    # Handle Removing Product
+    elif step == 'removing_product':
+        print(f"🔧 PROFILE MGMT DEBUG: In removing_product branch, calling handle_product_management")
+        return handle_product_management(phone_number,incoming_msg,user_profile)
+        
     # If we reach here, something went wrong - reset to menu
     else:
         print(f"🔧 PROFILE MGMT ERROR: Unknown step '{step}', resetting to menu")
