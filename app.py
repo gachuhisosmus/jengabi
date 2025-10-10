@@ -1041,11 +1041,11 @@ def get_intelligent_response(incoming_msg, user_profile):
     # Business-aware responses
     business_questions = ['how', 'what', 'when', 'where', 'why', 'can i', 'should i', 'advice']
     if any(q in incoming_msg for q in business_questions) and business_context:
-        return f"I'll help you with that{business_context}! Reply 'ideas' for social media marketing ideas, 'strat' for strategies, 'qstn' for business advice, '4wd' for customer message analysis, or ask me anything about your business."
+        return f"I'll help you with that{business_context}! Reply *'ideas'* for social media marketing ideas, *'strat'* for marketing strategies, *'qstn'* for business advices, *'4wd'* for customer message analysis, or ask me anything about your business."
     
     # Default helpful response
-    help_options = "Reply 'ideas' for social media marketing ideas, 'strat' for strategies, 'qstn' for business advice, '4wd' for customer message analysis, 'status' for subscription info, 'profile' to manage your business info, or 'help' for more options."
-    return f"I'm here to help your{business_context} business with social media marketing! {help_options}"
+    help_options = "Reply *'ideas'* for social media marketing ideas, *'strat'* for strategies, *'qstn'* for business advice, *'4wd'* for customer message analysis, *'status'* for subscription info, *'profile'* to manage your business info, or *'help'* for more options."
+    return f"I'm here to help your*{business_context}* business with social media marketing! {help_options}"
 
 def check_subscription(profile_id):
     """Checks if the user has an active subscription."""
@@ -1131,7 +1131,7 @@ def start_profile_management(phone_number, user_profile):
     user_sessions[phone_number]['profile_step'] = 'menu'
     
     profile_summary = f"""
-📊 YOUR CURRENT PROFILE:
+📊 *YOUR CURRENT PROFILE:*
 
 🏢 Business: {user_profile.get('business_name', 'Not set')}
 📋 Type: {user_profile.get('business_type', 'Not set')}
@@ -1142,7 +1142,7 @@ def start_profile_management(phone_number, user_profile):
 
 📦 Products: {', '.join(user_profile.get('business_products', [])) or 'None'}
 
-What would you like to update?
+*What would you like to update?*
 1. 🏢 Business Name
 2. 📋 Business Type  
 3. 📍 Location
@@ -1213,7 +1213,7 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
         elif incoming_msg == '9':
             # Exit profile management
             user_sessions[phone_number]['managing_profile'] = False
-            return True, "Returning to main menu. Reply *'ideas'* for ideas, 'strat' for strategies, 'qstn' for business advice, '4wd' for customer analysis, 'status' for subscription, or 'help' for options."
+            return True, "Returning to main menu. Reply *'ideas'* for marketing ideas, *'strat'* for marketing strategies, *'qstn'* for business advices, *'4wd'* for customer analysis, *'status'* for subscription status, or *'help'* for options."
         
         else:
             return False, "Please choose a valid option (1-9):"
@@ -1953,7 +1953,7 @@ Paste or forward the customer message now:""")
         return str(resp)
     
     elif 'hello' in incoming_msg or 'hi' in incoming_msg or 'start' in incoming_msg:
-        resp.message("Hello! Welcome back! Reply 'ideas' for social media marketing ideas, 'strat' for strategies, 'qstn' for business advice, '4wd' for customer message analysis, 'status' to check your subscription, or 'profile' to manage your business info.")
+        resp.message("Hello! Welcome back! Reply *'ideas'* for social media marketing ideas, *'strat'* for marketing strategies, *'qstn'* for business advice, *'4wd'* for customer message analysis, *'status'* to check your subscription, or *'profile'* to manage your business info.")
         return str(resp)
     
     elif 'status' in incoming_msg:
