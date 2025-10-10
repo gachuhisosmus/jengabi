@@ -1213,7 +1213,7 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
         elif incoming_msg == '9':
             # Exit profile management
             user_sessions[phone_number]['managing_profile'] = False
-            return True, "Returning to main menu. Reply 'ideas' for ideas, 'strat' for strategies, 'qstn' for business advice, '4wd' for customer analysis, 'status' for subscription, or 'help' for options."
+            return True, "Returning to main menu. Reply *'ideas'* for ideas, 'strat' for strategies, 'qstn' for business advice, '4wd' for customer analysis, 'status' for subscription, or 'help' for options."
         
         else:
             return False, "Please choose a valid option (1-9):"
