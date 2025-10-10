@@ -1241,9 +1241,15 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
             user_sessions[phone_number]['profile_step'] = 'menu'
             return False, f"❌ Error updating profile. Please try again.\n\nWhat would you like to update? (Reply 1-9)"
     
-    # Handle All product management states
-    elif step in ['managing_products', 'product_menu', 'adding_product', 'removing_product', 'editing_product', 'confirm_clear']:
-        print(f"🔧 PROFILE MGMT DEBUG: In product management state '{step}', calling handle_product_management")
+    # Handle product management
+    elif step == 'managing_products':
+        print(f"🔧 PROFILE MGMT DEBUG: Calling handle_product_management")
+        return handle_product_management(phone_number, incoming_msg, user_profile)
+    
+    # Handle product menu (this is the missing part!)
+    elif step == 'product_menu':
+        print(f"🔧 PROFILE MGMT DEBUG: In product_menu branch, calling handle_product_management")
+        return handle_product_management(phone_number, incoming_msg, user_profile)
     
         return False, "I didn't understand that. Please choose a valid option (1-9):"
 
