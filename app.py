@@ -1241,16 +1241,11 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
             user_sessions[phone_number]['profile_step'] = 'menu'
             return False, f"❌ Error updating profile. Please try again.\n\nWhat would you like to update? (Reply 1-9)"
     
-    # Handle product management
-    elif step == 'managing_products':
-        print(f"🔧 PROFILE MGMT DEBUG: Calling handle_product_management")
-        return handle_product_management(phone_number, incoming_msg, user_profile)
-        
-    elif step == 'product_menu':
-        print(f"🔧 PROFILE MGMT DEBUG: In product_menu branch, calling handle_product_management")
-        return handle_product_management(phone_number, incoming_msg, user_profile)
+    # Handle All product management states
+    elif step in ['managing_products', 'product_menu', 'adding_product', 'removing_product', 'editing_product', 'confirm_clear']:
+        print(f"🔧 PROFILE MGMT DEBUG: In product management state '{step}', calling handle_product_management")
     
-    return False, "I didn't understand that. Please choose a valid option (1-9):"
+        return False, "I didn't understand that. Please choose a valid option (1-9):"
 
 def start_product_management(phone_number, user_profile):
     """Start product management sub-menu"""
@@ -1331,10 +1326,12 @@ def handle_product_management(phone_number, incoming_msg, user_profile):
             return False, "Please choose a valid option (1-5):"
     
     elif step == 'adding_product':
+        print(f"🔧 PRODUCT MGMT DEBUG: In adding_product branch, processing product: '{incoming_msg}'")
         new_product = incoming_msg.strip()
         if new_product:
             # Add the new product
             updated_products = current_products + [new_product]
+            print(f"🔧 PRODUCT MGMT DEBUG: Updated products will be: {updated_products}")
             # Save to database
             try:
                 supabase.table('profiles').update({
@@ -1342,6 +1339,7 @@ def handle_product_management(phone_number, incoming_msg, user_profile):
                 }).eq('id', user_profile['id']).execute()
                 user_profile['business_products'] = updated_products
                 session['profile_step'] = 'product_menu'
+                print(f"🔧 PRODUCT MGMT DEBUG: Successfully added product '{new_product}', returning to product menu")
                 
                 # Return to product menu with success message
                 products_list = "\n".join([f"   {i+1}. {product}" for i, product in enumerate(updated_products)]) if updated_products else "   No products yet"
