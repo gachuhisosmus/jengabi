@@ -640,6 +640,8 @@ def handle_product_selection(incoming_msg, user_profile, phone_number):
 
 def generate_realistic_ideas(user_profile, products, output_type='ideas', num_ideas=3):
     """Generate practical, achievable social media marketing content based on plan type"""
+    print(f"🚨 DEBUG: output_type received = '{output_type}'")
+    print(f"🚨 DEBUG: products = {products}")
     try:
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -1626,12 +1628,16 @@ def webhook():
                 session['awaiting_product_selection'] = False
                 
                 # Determine output type
+                print(f"🚨 DEBUG: generating_strategy = {session.get('generating_strategy')}")
+                print(f"🚨 DEBUG: Before output_type determination")
                 if session.get('generating_strategy'):
                     output_type = 'ideas_strategy'
                     session['generating_strategy'] = False
+                    print(f"🚨 DEBUG: Setting output_type to 'ideas_strategy' for strat command")
                 else:
                     plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
                     output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
+                    print(f"🚨 DEBUG: Setting output_type to '{output_type}' for ideas command")
                 
                 print(f"🚨 DEBUG: Calling generate_realistic_ideas with output_type: {output_type}")
                 ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
