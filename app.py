@@ -1350,7 +1350,9 @@ def handle_product_management(phone_number, incoming_msg, user_profile):
         
         elif incoming_msg == '5':
             session['profile_step'] = 'menu'
-            return start_profile_management(phone_number, user_profile)
+            # start_profile_management returns just the message string, so wrap it in a tuple
+            profile_message = start_profile_management(phone_number, user_profile)
+            return False, profile_message  # Return as tuple (profile_complete, message)
         
         else:
             return False, "Please choose a valid option (1-5):"
