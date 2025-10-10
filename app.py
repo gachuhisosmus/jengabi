@@ -1140,7 +1140,7 @@ def start_profile_management(phone_number, user_profile):
 🌐 Website: {user_profile.get('website', 'Not set')}
 🎯 Goals: {user_profile.get('business_marketing_goals', 'Not set')}
 
-📦 Products: {', '.join(user_profile.get('business_products', [])) or 'None'}
+📦 *Products:* {', '.join(user_profile.get('business_products', [])) or 'None'}
 
 *What would you like to update?*
 1. 🏢 Business Name
@@ -1153,7 +1153,7 @@ def start_profile_management(phone_number, user_profile):
 8. 📊 View Full Profile
 9. ↩️ Back to Main Menu
 
-Reply with a number (1-9):
+*Reply with a number (1-9):*
 """
     return profile_summary
 
@@ -1296,7 +1296,7 @@ Options:
 4. 🗑️ Clear All Products
 5. ↩️ Back to Profile Menu
 
-Reply with a number (1-5):
+*Reply with a number* (1-5):
 """
     session['profile_step'] = 'product_menu'
     print(f"🔧 START PRODUCT MGMT DEBUG: Set profile_step to 'product_menu'")
@@ -1390,7 +1390,7 @@ Options:
 4. 🗑️ Clear All Products
 5. ↩️ Back to Profile Menu
 
-Reply with a number (1-5):
+*Reply with a number* (1-5):
 """
                 return False, menu
             except Exception as e:
@@ -1432,7 +1432,7 @@ Options:
 4. 🗑️ Clear All Products
 5. ↩️ Back to Profile Menu
 
-Reply with a number (1-5):
+*Reply with a number* (1-5):
 """
                     return False, menu
                 except Exception as e:
@@ -1487,7 +1487,7 @@ Options:
 4. 🗑️ Clear All Products
 5. ↩️ Back to Profile Menu
 
-Reply with a number (1-5):
+*Reply with a number* (1-5):
 """
                     return False, menu
                 except Exception as e:
@@ -1523,7 +1523,7 @@ Options:
 4. 🗑️ Clear All Products
 5. ↩️ Back to Profile Menu
 
-Reply with a number (1-5):
+*Reply with a number* (1-5):
 """
                 return False, menu
             except Exception as e:
@@ -1549,7 +1549,7 @@ Options:
 4. 🗑️ Clear All Products
 5. ↩️ Back to Profile Menu
 
-Reply with a number (1-5):
+*Reply with a number* (1-5):
 """
             return False, menu
     
