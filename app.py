@@ -1260,6 +1260,16 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
     elif step == 'removing_product':
         print(f"🔧 PROFILE MGMT DEBUG: In removing_product branch, calling handle_product_management")
         return handle_product_management(phone_number,incoming_msg,user_profile)
+    
+    # Handle product editing
+    elif step == 'editing_product':
+        print(f"🔧 PROFILE MGMT DEBUG: In editing_product branch, calling handle_product_management")
+        return handle_product_management(phone_number,incoming_msg, user_profile)
+    
+    # Handle Clear All Products
+    elif step == 'confirm_clear':
+        print(f"🔧 PROFILE MGMT DEBUG: In confirm_clear branch, calling handle_product_management")
+        return handle_product_management(phone_number, incoming_msg, user_profile)
         
     # If we reach here, something went wrong - reset to menu
     else:
