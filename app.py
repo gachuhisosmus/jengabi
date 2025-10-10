@@ -1201,7 +1201,7 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
             return False, "What are your new marketing goals?"
         
         elif incoming_msg == '7':
-            user_sessions[phone_number]['profile_step'] = 'managing_products'
+            print(f"🔧 PROFILE MGMT DEBUG: User selected 7 - going to product management")
             return start_product_management(phone_number, user_profile)
         
         elif incoming_msg == '8':
@@ -1243,6 +1243,11 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
     
     # Handle product management
     elif step == 'managing_products':
+        print(f"🔧 PROFILE MGMT DEBUG: Calling handle_product_management")
+        return handle_product_management(phone_number, incoming_msg, user_profile)
+        
+    elif step == 'product_menu':
+        print(f"🔧 PROFILE MGMT DEBUG: In product_menu branch, calling handle_product_management")
         return handle_product_management(phone_number, incoming_msg, user_profile)
     
     return False, "I didn't understand that. Please choose a valid option (1-9):"
