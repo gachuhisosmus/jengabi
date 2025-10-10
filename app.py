@@ -597,7 +597,7 @@ def start_product_selection(phone_number, user_profile):
 {len(products)+1}. All Products
 {len(products)+2}. Other (not listed)
 
-Reply with numbers separated by commas (e.g., 1,3,5)
+Reply with numbers separated by commas (*e.g., 1,3,5*)
 """
 
 def handle_product_selection(incoming_msg, user_profile, phone_number):
