@@ -695,14 +695,15 @@ def handle_product_selection(incoming_msg, user_profile, phone_number):
         return None, "Please select products using numbers (e.g., 1,3,5)"
 
 def generate_realistic_ideas(user_profile, products, output_type='ideas', num_ideas=3):
-    """Generate practical, achievable social media marketing content based on plan type"""
+    """Generate differentiated content based on command type"""
     print(f"🚨 DEBUG: output_type received = '{output_type}'")
     print(f"🚨 DEBUG: products = {products}")
+    
     try:
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
-        # Use business data for personalized prompts
+        # Get business context
         business_context = ""
         if user_profile.get('business_name'):
             business_context = f"for {user_profile['business_name']}"
@@ -711,123 +712,219 @@ def generate_realistic_ideas(user_profile, products, output_type='ideas', num_id
         if user_profile.get('business_location'):
             business_context += f" located in {user_profile['business_location']}"
         
-        # For Pro users, include real-time trends in strategy generation
-        if output_type == 'strategies' and check_subscription(user_profile['id']):
+        # Get enhanced data for Pro users
+        enhanced_context = ""
+        if output_type in ['strategies', 'pro_ideas'] and check_subscription(user_profile['id']):
             plan_info = get_user_plan_info(user_profile['id'])
             if plan_info and plan_info.get('plan_type') == 'pro':
-                # Add real-time insights for Pro users
                 try:
                     trends_data = get_google_trends(user_profile.get('business_type'))
+                    competitor_data = get_competitor_insights(
+                        user_profile.get('business_type'),
+                        user_profile.get('business_location', 'Kenya')
+                    )
+                    
                     if trends_data:
-                        business_context += f" | Current trends: {trends_data.get('trending_keywords', {})}"
-                    else:
-                        business_context += " | Trend data temporarily unavailable"
+                        enhanced_context += f"\n\n📊 CURRENT TRENDS: {list(trends_data.get('trending_keywords', {}).keys())[:3]}"
+                    if competitor_data and competitor_data.get('top_competitors'):
+                        enhanced_context += f"\n🎯 COMPETITOR INSIGHTS: {[comp['name'] for comp in competitor_data['top_competitors'][:2]]}"
+                        if competitor_data.get('market_gaps'):
+                            enhanced_context += f"\n💡 MARKET GAPS: {competitor_data['market_gaps'][:2]}"
                 except Exception as e:
-                    print(f"Google Trends error in idea generation: {e}")
-                    business_context += " | Using standard market insights"
-                trends_data = get_google_trends(user_profile.get('business_type'))
-                if trends_data:
-                    business_context += f" | Current trends: {trends_data.get('trending_keywords', {})}"
+                    print(f"Enhanced data error: {e}")
+                    enhanced_context += "\n📈 Using advanced market analysis"
         
-        # Determine prompt based on output_type (plan level)
+        # COMPLETELY DIFFERENT PROMPTS FOR EACH COMMAND TYPE
         if output_type == 'ideas':
+            # TACTICAL: Quick, actionable content ideas
             prompt = f"""
-            Act as an expert marketing consultant for African small businesses.
-            Generate {num_ideas} highly specific, actionable social media post ideas {business_context} focusing on {', '.join(products)}.
+            Act as a social media content creator for African small businesses.
+            Generate {num_ideas} SPECIFIC, READY-TO-USE social media post ideas {business_context} for {', '.join(products)}.
             
-            REQUIREMENTS:
-            - Each idea must be under 100 characters
-            - Include emojis relevant to African business culture
-            - Make it specific to their products and local context
-            - Mix English and Kiswahili or Sheng where applicable
-            - Focus on solving customer problems, not just features
-            - Include a clear call-to-action
-            - Make it engaging and compelling
+            FOCUS ON:
+            - Immediate content creation
+            - Platform-specific formatting (Instagram, Facebook, TikTok)
+            - Engagement-driven copy
+            - Local cultural relevance
+            - Clear call-to-action
             
-            FORMAT - RETURN ONLY THIS FORMAT:
-            1. [Idea 1 with emoji]  
-            2. [Idea 2 with emoji]
-            3. [Idea 3 with emoji]
+            FORMAT REQUIREMENTS:
+            • Each idea must be 80-120 characters
+            • Include relevant emojis and hashtags
+            • Specify the best platform for each idea
+            • Make it copy-paste ready
             
-            DO NOT include strategies, plans, or additional sections.
+            EXAMPLE FORMAT:
+            1. 📱 Instagram Post: "New {products[0]} just dropped! ✨ Who's copping first? 👀 #NewArrivals #LocalBusiness"
+            2. 🎥 TikTok Idea: "Watch how we style our {products[0]} for different occasions! 👗➡️👠 Which look is your favorite? 💬"
+            3. 💬 Facebook Post: "Customer spotlight! 👉 Jane rocked our {products[0]} at her office party. Tag someone who needs this fit! 🏷️"
+            
+            Generate {num_ideas} ideas following this exact format.
             """
-        elif output_type == 'ideas_strategy':
+            
+        elif output_type == 'pro_ideas':
+            # PREMIUM TACTICAL: Trend-aware, viral-potential ideas
             prompt = f"""
-            Act as an expert marketing consultant for African small businesses.
-            Create {num_ideas} social media post ideas PLUS a mini-strategy {business_context} for {', '.join(products)}.
+            Act as a viral content strategist for premium African brands.
+            Create {num_ideas} HIGH-IMPACT, TREND-AWARE social media concepts {business_context} for {', '.join(products)}.{enhanced_context}
             
-            REQUIREMENTS:
-            - First, provide {num_ideas} specific post ideas (under 100 characters each)
-            - Then, add a 3-point weekly content strategy
-            - Include platform recommendations (WhatsApp, Facebook, Instagram, TikTok)
-            - Make it practical for small business owners
-            - Include emojis and local context
+            PREMIUM REQUIREMENTS:
+            - Leverage current social media trends and algorithms
+            - Focus on viral potential and shareability
+            - Include platform-specific best practices
+            - Incorporate psychological triggers (FOMO, social proof, curiosity)
+            - Multi-platform content adaptation
             
-            FORMAT - RETURN ONLY THIS FORMAT:
-            🎯 POST IDEAS:
-            1. [Idea 1]
-            2. [Idea 2]
-            3. [Idea 3]
+            FORMAT REQUIREMENTS:
+            🚀 VIRAL CONCEPT: [Platform] - [Hook/Headline]
+            📈 TREND ALIGNMENT: [Current trend this leverages]
+            🎯 PSYCHOLOGICAL ANGLE: [Psychological trigger used]
+            📱 CONTENT FORMAT: [Reel/Story/Carousel/Post]
+            💬 SAMPLE COPY: [Actual post text with emojis]
+            🏷️ HASHTAG STRATEGY: [3-5 strategic hashtags]
             
-            📈 MINI-STRATEGY:
-            • [Strategy point 1]
-            • [Strategy point 2]
-            • [Strategy point 3]
+            Generate {num_ideas} premium viral concepts.
             """
-        else:  # strategies
+            
+        else:  # strategies - COMPREHENSIVE STRATEGIC PLANS
             prompt = f"""
-            Act as an expert marketing consultant for African small businesses.
-            Create a comprehensive marketing strategy {business_context} for {', '.join(products)}.
+            Act as a Chief Marketing Officer for growing African businesses.
+            Develop a COMPREHENSIVE 30-DAY MARKETING STRATEGY {business_context} for {', '.join(products)}.{enhanced_context}
             
-            REQUIREMENTS:
-            - Provide a 7-day content plan
-            - Include target audience analysis
-            - Suggest platform-specific approaches
-            - Include engagement tactics
-            - Add performance measurement tips
-            - Make it actionable and realistic
+            STRATEGIC FRAMEWORK REQUIRED:
             
-            FORMAT - RETURN ONLY THIS FORMAT:
-            📊 *COMPREHENSIVE MARKETING STRATEGY*
+            🎯 MARKET POSITIONING:
+            • Unique Value Proposition
+            • Target Audience Personas (3 detailed segments)
+            • Competitive Differentiation
             
-            🎯 *TARGET AUDIENCE:*
-            • [Audience insight 1]
-            • [Audience insight 2]
+            📅 30-DAY ROADMAP:
+            WEEK 1: AWARENESS PHASE
+            - Day 1-3: [Specific awareness activities]
+            - Day 4-7: [Engagement initiatives]
             
-            📅 *7-DAY CONTENT PLAN:*
-            *Monday:* [Content focus]
-            *Tuesday:* [Content focus]
-            *Wenesday:* [Content focus]
-            *Thursday:* [Content focus]
-            *Friday:* [Content focus]
-            *Saturday:* [Content focus]
-            *Sunday:* [Content focus]
-            ...
+            WEEK 2: CONSIDERATION PHASE  
+            - Day 8-14: [Lead generation tactics]
+            - Day 15-21: [Nurturing campaigns]
             
-            💡 *ENGAGEMENT TACTICS:*
-            • [Tactic 1]
-            • [Tactic 2]
-            • [Tactic 3]
+            WEEK 3-4: CONVERSION PHASE
+            - Day 22-28: [Sales activation]
+            - Day 29-30: [Retention focus]
+            
+            💰 BUDGET ALLOCATION:
+            • Content Creation: X%
+            • Advertising: X%
+            • Influencer Collaboration: X%
+            • Analytics Tools: X%
+            
+            📊 KPI MEASUREMENT:
+            • Weekly growth targets
+            • Conversion rate goals
+            • Engagement benchmarks
+            • ROI calculations
+            
+            🔄 ADAPTATION PLAN:
+            • Weekly performance review process
+            • Pivot triggers and alternatives
+            • Scaling opportunities
+            
+            Provide a complete strategic marketing plan.
             """
         
-        # Call the OpenAI API
+        # Call the OpenAI API with different parameters for each type
+        if output_type == 'strategies':
+            max_tokens = 1200
+            temperature = 0.7
+        elif output_type == 'pro_ideas':
+            max_tokens = 800
+            temperature = 0.8
+        else:  # regular ideas
+            max_tokens = 500
+            temperature = 0.9
+        
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a practical marketing expert for African small businesses. Create realistic, actionable social media marketing content for platforms like TikTok, WhatsApp, Facebook, Instagram, Twitter that drive measurable results."},
+                {"role": "system", "content": get_system_prompt(output_type)},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=300 if output_type == 'strategies' else 300,
-            temperature=0.8,
+            max_tokens=max_tokens,
+            temperature=temperature,
         )
         
-        # Extract the AI's text
-        ai_text = response.choices[0].message.content.strip()
-        return ai_text
+        return response.choices[0].message.content.strip()
         
     except Exception as e:
         print(f"OpenAI API Error: {e}")
-        return "Sorry, I'm having trouble generating content right now. Please try again in a moment."
+        return get_fallback_content(output_type, products)
+
+def get_system_prompt(output_type):
+    """Get specialized system prompts for each output type"""
+    prompts = {
+        'ideas': "You are a creative social media manager for African small businesses. Create engaging, ready-to-use social media content that drives immediate engagement and follows platform best practices.",
+        'pro_ideas': "You are a viral content expert and social media algorithm specialist. Create trend-aware, high-conversion social media concepts that leverage psychological triggers and platform algorithms for maximum reach and engagement.",
+        'strategies': "You are a strategic marketing director with expertise in African markets. Develop comprehensive, data-driven marketing strategies with clear roadmaps, KPIs, and measurable outcomes for business growth."
+    }
+    return prompts.get(output_type, "You are a marketing expert for African businesses.")
+
+def get_fallback_content(output_type, products):
+    """Provide quality fallback content when API fails"""
+    if output_type == 'strategies':
+        return f"""📊 COMPREHENSIVE MARKETING STRATEGY FOR {', '.join(products).upper()}
+
+🎯 STRATEGIC POSITIONING:
+• Premium quality positioning in mid-market segment
+• Focus on 25-40 year old urban professionals
+• Differentiation through unique African-inspired designs
+
+📅 30-DAY IMPLEMENTATION ROADMAP:
+
+WEEK 1: BRAND AWARENESS
+• Day 1-3: Professional photoshoot and content creation
+• Day 4-7: Social media platform setup and optimization
+• Day 8-14: Influencer partnership outreach
+
+WEEK 2-3: ENGAGEMENT & CONVERSION  
+• Customer testimonial campaign
+• Limited-time launch offers
+• Email marketing sequence
+
+WEEK 4: RETENTION & GROWTH
+• Loyalty program implementation
+• Customer referral system
+• Performance analysis and optimization
+
+💡 Key Success Factors:
+• Consistent brand messaging across platforms
+• Data-driven content optimization
+• Customer-centric engagement approach"""
+
+    elif output_type == 'pro_ideas':
+        return f"""🚀 PREMIUM CONTENT CONCEPTS FOR {', '.join(products).upper()}
+
+1. 🎥 TIKTOK TREND JACKING
+Concept: Transform popular audio trends into product showcases
+Hook: "When they said our {products[0]} couldn't look this good... 👀"
+Strategy: Leverage trending audio with before/after transformation
+
+2. 📸 INSTAGRAM CAROUSEL STORYTELLING  
+Concept: 5-part carousel telling the product journey
+Hook: "From sketch to street: The making of our {products[0]} ✨"
+Strategy: Educational + inspirational content mix
+
+3. 💬 FOMO-ENGAGEMENT POST
+Concept: Limited availability social proof campaign
+Hook: "Only 5 pieces left at this price! 👇 Who's grabbing one?"
+Strategy: Scarcity + social validation triggers"""
+
+    else:  # regular ideas
+        return f"""🎯 QUICK SOCIAL MEDIA IDEAS FOR {', '.join(products).upper()}
+
+1. Instagram Post: "Just restocked our bestselling {products[0]}! 🔥 Who needs this in their wardrobe? #NewArrivals"
+
+2. Facebook Story: "Behind the scenes at our photoshoot today! 📸 Which {products[0]} color is your favorite? 💬"
+
+3. TikTok Idea: "3 ways to style our {products[0]} for different occasions! 👗✨ Which look works for you?"""
 
 # ===== FIXED MESSAGE LIMIT FUNCTIONS =====
 
@@ -1753,7 +1850,7 @@ I need to know about your business first to create personalized marketing conten
                 'managing_profile': False,
                 'awaiting_qstn': False,
                 'awaiting_4wd': False,
-                'generating_strategy': False
+                
     })
     
     # ✅ Handle QSTN command (NEW - Available for ALL plans)
@@ -1928,21 +2025,17 @@ Paste or forward the customer message now:""")
         print(f"🚨 PRODUCT SELECTION RESULT: products={selected_products}, error={error_message}")
        
         if error_message:
-            print(f"🚨 Sending error message: {error_message}")
             resp.message(error_message)
             return str(resp)
         elif selected_products:
-            print(f"🚨 Generating ideas for: {selected_products}")
             session['awaiting_product_selection'] = False
             
-            # Check if we're generating strategies specifically
-            if session.get('generating_strategy'):
-                output_type = 'strategies'
-                session['generating_strategy'] = False
-            else:
-                plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
-                output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
-                print(f"🚨 Calling generate_realistic_ideas with output_type: {output_type}")
+            # Use the output_type stored in session (new approach)
+            output_type = session.get('output_type', 'ideas')
+            
+            # Clear the output_type after use
+            if 'output_type' in session:
+                del session['output_type']
             
             ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
             print(f"🚨 IDEAS GENERATED: {len(ideas)} characters")
@@ -2021,14 +2114,36 @@ Paste or forward the customer message now:""")
         if remaining <= 0:
             resp.message("You've used all your available AI content generations for this period. Reply 'status' to check your usage.")
             return str(resp)
-                           
-        # For strategies, we'll set a flag to generate strategy content
-        session['generating_strategy'] = True 
+            
+        # DETERMINE OUTPUT BASED ON PLAN
+        plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
+        if plan_info == plan_info.get('plan_type') == 'pro':
+            output_type = 'pro_ideas'
+        else:
+            output_type = 'ideas'
         
+        session['output_type'] = output_type
         product_message = start_product_selection(phone_number, user_profile)
         resp.message(product_message)
         return str(resp)
-    
+        
+    elif incoming_msg.strip() == 'strat':
+        if not check_subscription(user_profile['id']):
+            resp.message("You need a subscription to generate strategies. Reply 'subscribe' to choose a plan.")
+            return str(resp)
+
+        remaining = get_remaining_messages(user_profile['id'])
+        if remaining <= 0:
+            resp.message("You've used all your available AI content generations for this period. Reply 'status' to check your usage.")
+            return str(resp)
+        
+        # Strategies always use 'strategies' output type
+        session['output_type'] = 'strategies'
+        product_message = start_product_selection(phone_number, user_profile)
+        resp.message(product_message)
+        return str(resp)        
+                           
+            
     elif 'hello' in incoming_msg or 'hi' in incoming_msg or 'start' in incoming_msg:
         resp.message("Hello! Welcome back! Reply *'ideas'* for social media marketing ideas, *'strat'* for marketing strategies, *'qstn'* for business advices, *'4wd'* for customer message analysis, *'status'* to check your subscription, or *'profile'* to manage your business info.")
         return str(resp)
