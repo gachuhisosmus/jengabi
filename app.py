@@ -215,54 +215,74 @@ def get_competitor_insights(business_type, location):
 
 def find_similar_businesses(business_type, location):
     """Find similar businesses in the area (simulated)"""
-    # In production, integrate with Google Places API or similar
+    # Enhanced business-specific examples
     business_examples = {
+        'fashion boutique': [
+            {'name': 'Trendy Styles Nairobi', 'specialty': 'Affordable office wear', 'rating': 4.3, 'strength': 'Instagram Reels'},
+            {'name': 'Urban Fashion Hub', 'specialty': 'Imported designs', 'rating': 4.5, 'strength': 'TikTok presence'},
+            {'name': 'Local Designs Kenya', 'specialty': 'African prints', 'rating': 4.7, 'strength': 'Facebook community'}
+        ],
         'restaurant': [
-            {'name': 'Urban Bites', 'specialty': 'Fusion cuisine', 'rating': 4.5},
-            {'name': 'Spice Garden', 'specialty': 'Indian food', 'rating': 4.3},
-            {'name': 'Cafe Mocha', 'specialty': 'Coffee & snacks', 'rating': 4.7}
+            {'name': 'Nairobi Grill House', 'specialty': 'Local cuisine', 'rating': 4.4, 'strength': 'Food photography'},
+            {'name': 'Urban Bites Restaurant', 'specialty': 'Fusion dishes', 'rating': 4.6, 'strength': 'Customer reviews'},
+            {'name': 'Spice Garden', 'specialty': 'Indian food', 'rating': 4.3, 'strength': 'Lunch specials'}
         ],
         'salon': [
-            {'name': 'Glamour Studio', 'specialty': 'Hair styling', 'rating': 4.6},
-            {'name': 'Beauty Haven', 'specialty': 'Spa treatments', 'rating': 4.4},
-            {'name': 'Style Lounge', 'specialty': 'Makeup & nails', 'rating': 4.8}
+            {'name': 'Glamour Studio Nairobi', 'specialty': 'Hair styling', 'rating': 4.5, 'strength': 'Transformation videos'},
+            {'name': 'Beauty Haven Spa', 'specialty': 'Spa treatments', 'rating': 4.7, 'strength': 'Relaxation content'},
+            {'name': 'Style Lounge', 'specialty': 'Makeup & nails', 'rating': 4.4, 'strength': 'Tutorial content'}
         ],
         'retail': [
-            {'name': 'Trendy Mart', 'specialty': 'Fashion retail', 'rating': 4.2},
-            {'name': 'Urban Styles', 'specialty': 'Clothing store', 'rating': 4.5},
-            {'name': 'Lifestyle Shop', 'specialty': 'Accessories', 'rating': 4.3}
+            {'name': 'Trendy Mart CBD', 'specialty': 'Fashion retail', 'rating': 4.2, 'strength': 'New arrivals'},
+            {'name': 'Urban Styles Nairobi', 'specialty': 'Clothing store', 'rating': 4.5, 'strength': 'Seasonal collections'},
+            {'name': 'Lifestyle Shop', 'specialty': 'Accessories', 'rating': 4.3, 'strength': 'Gift ideas'}
         ]
     }
     
     return business_examples.get(business_type.lower(), [
-        {'name': 'Local Business 1', 'specialty': 'General services', 'rating': 4.0},
-        {'name': 'Local Business 2', 'specialty': 'Quality products', 'rating': 4.2}
+        {'name': f'{location} Business 1', 'specialty': 'Quality services', 'rating': 4.0, 'strength': 'Local presence'},
+        {'name': f'{location} Business 2', 'specialty': 'Customer focus', 'rating': 4.2, 'strength': 'Good reviews'}
     ])
 
 def analyze_market_gaps(business_type, competitors):
     """Analyze market gaps based on competitor data"""
     gaps = {
+        'fashion boutique': [
+            "Limited WhatsApp marketing integration",
+            "Few behind-the-scenes content creators",
+            "No customer loyalty programs visible",
+            "Weak engagement on customer comments",
+            "Limited video content despite high engagement potential"
+        ],
         'restaurant': [
-            "Plant-based options underutilized",
-            "Limited late-night delivery services",
-            "Few healthy breakfast options"
+            "Minimal behind-the-kitchen content",
+            "No interactive menu planning with customers", 
+            "Limited special dietary option promotion",
+            "Weak customer review highlighting",
+            "No live cooking session events"
         ],
         'salon': [
-            "Men's grooming services scarce",
-            "Limited organic product options",
-            "Evening appointments rarely available"
+            "Limited male grooming service promotion",
+            "No subscription/membership programs",
+            "Minimal educational content (hair care tips)",
+            "Weak before/after content strategy",
+            "No collaborative content with clients"
         ],
         'retail': [
-            "Eco-friendly products underrepresented",
-            "Local artisan products limited",
-            "Personal shopping services rare"
+            "Limited user-generated content encouragement",
+            "No seasonal styling guides",
+            "Weak cross-selling between product categories",
+            "Minimal local event participation",
+            "No customer spotlight features"
         ]
     }
     
     return gaps.get(business_type.lower(), [
-        "Digital presence could be improved",
-        "Customer engagement opportunities",
-        "Service diversification potential"
+        "Digital marketing presence needs enhancement",
+        "Customer engagement strategies could be improved",
+        "Content variety and frequency optimization needed",
+        "Social media platform diversification required",
+        "Local community involvement opportunities"
     ])
 
 def get_customer_sentiment(business_type):
@@ -312,6 +332,42 @@ def get_pricing_insights(business_type):
         'trend': 'Stable market conditions',
         'opportunity': 'Value-added services'
     })
+    
+def get_content_strategy_insights(business_type):
+    """Get content strategy insights for specific business types"""
+    content_insights = {
+        'fashion boutique': {
+            'best_content_types': ['Outfit styling videos', 'New arrival showcases', 'Customer try-ons', 'Behind-the-scenes'],
+            'optimal_posting_times': 'Weekdays 7-9 PM, Saturdays 10 AM-12 PM',
+            'top_hashtags': ['#NairobiFashion', '#KenyaStyle', '#AfricanWear', '#SupportLocalBusiness'],
+            'platform_recommendations': 'Instagram Reels, TikTok, Facebook Stories'
+        },
+        'restaurant': {
+            'best_content_types': ['Food preparation videos', 'Customer dining experiences', 'Chef specials', 'Menu highlights'],
+            'optimal_posting_times': 'Lunch (11 AM-1 PM) & Dinner (6-8 PM) hours',
+            'top_hashtags': ['#NairobiFood', '#KenyaRestaurants', '#FoodieNairobi', '#EatLocal'],
+            'platform_recommendations': 'Instagram, Facebook, TikTok for food videos'
+        },
+        'salon': {
+            'best_content_types': ['Hair transformation videos', 'Stylist tutorials', 'Client testimonials', 'Product features'],
+            'optimal_posting_times': 'Weekdays 10 AM-12 PM, Saturdays 9-11 AM',
+            'top_hashtags': ['#NairobiSalon', '#KenyaBeauty', '#HairStyleNairobi', '#SalonInKenya'],
+            'platform_recommendations': 'Instagram, TikTok for transformation videos'
+        },
+        'retail': {
+            'best_content_types': ['Product showcases', 'Customer reviews', 'Seasonal collections', 'Style guides'],
+            'optimal_posting_times': 'Evenings 6-8 PM, Weekends 2-4 PM',
+            'top_hashtags': ['#NairobiShopping', '#KenyaRetail', '#LocalBusinessKE', '#ShopLocal'],
+            'platform_recommendations': 'Instagram, Facebook for product features'
+        }
+    }
+    
+    return content_insights.get(business_type.lower(), {
+        'best_content_types': ['Product showcases', 'Customer testimonials', 'Behind-the-scenes'],
+        'optimal_posting_times': 'Evenings and weekends',
+        'top_hashtags': ['#LocalBusiness', '#SupportLocal', '#SmallBusiness'],
+        'platform_recommendations': 'Multiple platforms for broader reach'
+    })    
 
 def generate_trend_analysis(user_profile):
     """Generate comprehensive trend analysis using OpenAI"""
@@ -1016,6 +1072,7 @@ def handle_competitor_command(phone_number, user_profile):
     )
     
     if competitor_data:
+        content_insights = get_content_strategy_insights(user_profile.get('business_type'))
         analysis = f"""🎯 COMPETITOR INTELLIGENCE REPORT
 
 🏢 TOP COMPETITORS in your area:
@@ -1031,7 +1088,14 @@ def handle_competitor_command(phone_number, user_profile):
 
 🎭 CUSTOMER SENTIMENT:
 • What customers LOVE: {', '.join(competitor_data.get('customer_sentiment', {}).get('positive', []))}
-• Common COMPLAINTS: {', '.join(competitor_data.get('customer_sentiment', {}).get('negative', []))}"""
+• Common COMPLAINTS: {', '.join(competitor_data.get('customer_sentiment', {}).get('negative', []))}
+
+📱 CONTENT STRATEGY INSIGHTS:
+• Best Content Types: {', '.join(content_insights['best_content_types'])}
+• Optimal Posting Times: {content_insights['optimal_posting_times']}
+• Top Hashtags: {', '.join(content_insights['top_hashtags'])}
+• Platform Recommendations: {content_insights['platform_recommendations']}"""
+
     else:
         analysis = "Currently gathering competitor data for your business type and location..."
     
