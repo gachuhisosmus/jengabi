@@ -1850,8 +1850,7 @@ I need to know about your business first to create personalized marketing conten
                 'managing_profile': False,
                 'awaiting_qstn': False,
                 'awaiting_4wd': False,
-                
-    })
+            })
     
     # ✅ Handle QSTN command (NEW - Available for ALL plans)
     if incoming_msg.strip() == 'qstn':
@@ -2046,8 +2045,15 @@ Paste or forward the customer message now:""")
                 ideas = truncate_message(ideas)
                 print(f"🚨 TRUNCATED IDEAS LENGTH: {len(ideas)} characters")
             
-            content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
-            response_text = f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
+            # Different headers for each type
+            headers = {
+                'ideas': "🎯 SOCIAL MEDIA CONTENT IDEAS",
+                'pro_ideas': "🚀 PREMIUM VIRAL CONTENT CONCEPTS",
+                'strategies': "📊 COMPREHENSIVE MARKETING STRATEGY"
+            }
+            header = headers.get(output_type, "🎯 MARKETING CONTENT")
+            response_text = f"{header} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
+            
             
             print(f"🚨 FINAL RESPONSE LENGTH: {len(response_text)} characters")
             print(f"🚨 SENDING RESPONSE TO USER")
@@ -2101,32 +2107,21 @@ Paste or forward the customer message now:""")
             resp.message("You've used all your available AI content generations for this period. Reply 'status' to check your usage.")
             return str(resp)
         
+        # DETERMINE OUTPUT TYPE BASED ON PLAN
+        plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
+        if plan_info and plan_info.get('plan_type') == 'pro':
+           output_type = 'pro_ideas'  # Premium ideas for Pro users
+        else:
+            output_type = 'ideas'  # Regular ideas for other plans
+        
+        session['output_type'] = output_type
+        print(f"🚨 IDEAS COMMAND: Set output_type to '{output_type}'")        
+        
         product_message = start_product_selection(phone_number, user_profile)
         resp.message(product_message)
         return str(resp)
 
-    elif incoming_msg.strip() == 'strat':
-        if not check_subscription(user_profile['id']):
-            resp.message("You need a subscription to generate strategies. Reply 'subscribe' to choose a plan.")
-            return str(resp)
-        
-        remaining = get_remaining_messages(user_profile['id'])
-        if remaining <= 0:
-            resp.message("You've used all your available AI content generations for this period. Reply 'status' to check your usage.")
-            return str(resp)
-            
-        # DETERMINE OUTPUT BASED ON PLAN
-        plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
-        if plan_info == plan_info.get('plan_type') == 'pro':
-            output_type = 'pro_ideas'
-        else:
-            output_type = 'ideas'
-        
-        session['output_type'] = output_type
-        product_message = start_product_selection(phone_number, user_profile)
-        resp.message(product_message)
-        return str(resp)
-        
+           
     elif incoming_msg.strip() == 'strat':
         if not check_subscription(user_profile['id']):
             resp.message("You need a subscription to generate strategies. Reply 'subscribe' to choose a plan.")
@@ -2139,6 +2134,7 @@ Paste or forward the customer message now:""")
         
         # Strategies always use 'strategies' output type
         session['output_type'] = 'strategies'
+        print(f"🚨 STRAT COMMAND: Set output_type to 'strategies'")
         product_message = start_product_selection(phone_number, user_profile)
         resp.message(product_message)
         return str(resp)        
