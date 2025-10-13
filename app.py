@@ -2123,8 +2123,15 @@ Paste or forward the customer message now:""")
 
            
     elif incoming_msg.strip() == 'strat':
+        print(f"🔍 DEBUG STRAT: Checking subscription for user {user_profile['id']}")
         if not check_subscription(user_profile['id']):
             resp.message("You need a subscription to generate strategies. Reply 'subscribe' to choose a plan.")
+            return str(resp)
+            
+        # ⭐ ADD THIS: Check specific plan type
+        plan_info = get_user_plan_info(user_profile['id'])
+        if not plan_info or plan_info.get('plan_type') not in ['growth', 'pro']:
+            resp.message("🔒 Marketing strategies are available in Growth and Pro plans only. Reply 'subscribe' to upgrade!")
             return str(resp)
 
         remaining = get_remaining_messages(user_profile['id'])
@@ -2148,10 +2155,12 @@ Paste or forward the customer message now:""")
         try:
             # Check subscription with better error handling
             has_subscription = check_subscription(user_profile['id'])
+            print(f"🔍 DEBUG STRAT: check_subscription returned: {has_sub}")
             
             if has_subscription:
                 # User HAS a subscription
                 plan_info = get_user_plan_info(user_profile['id'])
+                print(f"🔍 DEBUG STRAT: get_user_plan_info returned: {plan_info}")
                 
                 # Safely handle plan_info
                 if plan_info and isinstance(plan_info, dict):
