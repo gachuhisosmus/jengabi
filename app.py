@@ -1877,30 +1877,47 @@ Ask me anything about your business operations, marketing, or customer service:"
     
     # ✅ Handle QSTN question input
     if session.get('awaiting_qstn'):
-        print(f"🚨 QSTN FOLLOW-UP: Processing question: '{incoming_msg}'")
-        
-        # Ensure session exists
-        
-            
-        
-        # ALWAYS clear the QSTN state first to prevent trapping user
-        session['awaiting_qstn'] = False 
-        
-        question = incoming_msg.strip()
-        
-        if not question or len(question) < 5:
-            print("🚨 QSTN ERROR: Question too short")
-            resp.message("Please ask a specific business question (at least 5 characters). Reply 'qstn' to try again.")
-            return str(resp)
-        
-        print("🚨 QSTN: Generating business advice...")
+       print(f"🚨 QSTN FOLLOW-UP: Processing question: '{incoming_msg}'")
+    
+    # CRITICAL: Clear state immediately
+    session['awaiting_qstn'] = False 
+    
+    question = incoming_msg.strip()
+    
+    if not question or len(question) < 5:
+        resp.message("Please ask a specific business question (at least 5 characters). Reply 'qstn' to try again.")
+        return str(resp)
+    
+    print("🚨 QSTN: Generating business advice...")
+    
+    try:
         # Generate business advice
         qstn_response = handle_qstn_command(phone_number, user_profile, question)
         print(f"🚨 QSTN: Response generated, length: {len(qstn_response)}")
         
+        # USE EXISTING TRUNCATION
+        if len(qstn_response) > 1600:
+            print("🚨 WARNING: Response too long, truncating...")
+            qstn_response = truncate_message(qstn_response, max_length=1600)  # Use WhatsApp limit
+            print(f"🚨 TRUNCATED RESPONSE LENGTH: {len(qstn_response)}")
+        
         resp.message(qstn_response)
+        print(f"🚨 QSTN: Response sent to user, length: {len(qstn_response)}")
+        
+        # VERIFY RESPONSE
+        if len(resp.to_string()) < 100:
+            print("❌ CRITICAL: Response too short, sending fallback")
+            fallback_resp = MessagingResponse()
+            fallback_resp.message("I've prepared your answer but encountered a delivery issue. Please try again.")
+            return str(fallback_resp)
+            
         update_message_usage(user_profile['id'])
-        print("🚨 QSTN: Response sent to user")
+        print("🚨 QSTN: Response successfully sent")
+        return str(resp)
+        
+    except Exception as e:
+        print(f"❌ QSTN ERROR: {e}")
+        resp.message("Sorry, I encountered an error while processing your question. Please try again.")
         return str(resp)
     
     # ✅ Handle 4WD command (NEW - Available for ALL plans)
