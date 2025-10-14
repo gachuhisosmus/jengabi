@@ -1839,8 +1839,11 @@ def webhook():
                 update_message_usage(user_profile['id'])
                 return str(resp)
             else:
-                # No more parts or continue data expired
+                # No more parts or continue data expired - CLEAR THE STATE
                 session['continue_data'] = None
+                # Also clear any other stuck states
+                session['awaiting_qstn'] = False
+                session['awaiting_4wd'] = False
                 resp.message("No more content to continue. Start a new command like 'ideas', 'strat', 'qstn', or '4wd'.")
                 return str(resp)
         else:
