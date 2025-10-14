@@ -64,6 +64,8 @@ def ensure_user_session(phone_number):
         session['awaiting_4wd'] = False
     if 'generating_strategy' not in session:
         session['generating_strategy'] = False
+    if 'continue_data' not in session:
+        session['continue_data'] = None
     
     return session
 
@@ -684,6 +686,68 @@ def handle_product_selection(incoming_msg, user_profile, phone_number):
     except Exception as e:
         print(f"Error handling product selection: {e}")
         return None, "Please select products using numbers (e.g., 1,3,5)"
+
+# ===== CONTINUE SYSTEM FUNCTIONS =====
+
+def split_content_into_parts(content, max_part_length=1200):
+    """Split long content into multiple parts for WhatsApp"""
+    if len(content) <= max_part_length:
+        return [content]
+    
+    parts = []
+    current_part = ""
+    lines = content.split('\n')
+    
+    for line in lines:
+        # If adding this line would exceed max length, start new part
+        if len(current_part) + len(line) + 1 > max_part_length and current_part:
+            parts.append(current_part.strip())
+            current_part = line + '\n'
+        else:
+            current_part += line + '\n'
+    
+    # Add the last part
+    if current_part.strip():
+        parts.append(current_part.strip())
+    
+    return parts
+
+def setup_continue_session(session, command_type, full_content, context_data=None):
+    """Setup continue session for long content"""
+    parts = split_content_into_parts(full_content)
+    
+    session['continue_data'] = {
+        'command_type': command_type,
+        'full_content': full_content,
+        'parts': parts,
+        'current_part': 0,
+        'total_parts': len(parts),
+        'timestamp': datetime.now(),
+        'context': context_data or {}
+    }
+    
+    return parts[0] + f"\n\n📄 *Part 1/{len(parts)}* - Reply *'cont'* for next part"
+
+def get_next_continue_part(session):
+    """Get the next part of continued content"""
+    if not session.get('continue_data'):
+        return None
+    
+    continue_data = session['continue_data']
+    current_part = continue_data['current_part'] + 1
+    
+    if current_part >= continue_data['total_parts']:
+        # All parts sent, clear continue data
+        session['continue_data'] = None
+        return None
+    
+    # Update current part and return next part
+    continue_data['current_part'] = current_part
+    part_content = continue_data['parts'][current_part]
+    
+    return part_content + f"\n\n📄 *Part {current_part + 1}/{continue_data['total_parts']}*" + (
+        " - Reply *'cont'* for next part" if current_part + 1 < continue_data['total_parts'] else " - *End of message*"
+    )
 
 def generate_realistic_ideas(user_profile, products, output_type='ideas', num_ideas=3):
     """Generate differentiated content based on command type"""
@@ -1753,6 +1817,7 @@ def webhook():
     print(f"🔍 DEBUG: Processing message '{incoming_msg}'")
     print(f"🔍 DEBUG: Session state - awaiting_qstn: {session.get('awaiting_qstn')}")
     print(f"🔍 DEBUG: Session state - awaiting_4wd: {session.get('awaiting_4wd')}")
+    print(f"🔍 DEBUG: Session state - continue_data: {session.get('continue_data')}")
     
     resp = MessagingResponse()
     user_profile = get_or_create_profile(phone_number)
@@ -1764,6 +1829,23 @@ def webhook():
     # DEBUG: Log user profile status
     print(f"DEBUG: User profile complete: {user_profile.get('profile_complete')}")
     print(f"DEBUG: User message count: {user_profile.get('used_messages')} / {user_profile.get('max_messages')}")
+    
+    # ✅ Handle CONTINUE command first (priority)
+    if incoming_msg.strip() == 'cont':
+        if session.get('continue_data'):
+            next_part = get_next_continue_part(session)
+            if next_part:
+                resp.message(next_part)
+                update_message_usage(user_profile['id'])
+                return str(resp)
+            else:
+                # No more parts or continue data expired
+                session['continue_data'] = None
+                resp.message("No more content to continue. Start a new command like 'ideas', 'strat', 'qstn', or '4wd'.")
+                return str(resp)
+        else:
+            resp.message("No ongoing content to continue. Start a new command like 'ideas', 'strat', 'qstn', or '4wd'.")
+            return str(resp)
     
     # ✅ ENFORCE PROFILE COMPLETION - Check if profile is incomplete
     if not user_profile.get('profile_complete'):
@@ -1835,7 +1917,7 @@ I need to know about your business first to create personalized marketing conten
     if incoming_msg.strip() in priority_commands:
         if phone_number in user_sessions:
             session = ensure_user_session(phone_number)
-            # Clear all ongoing states
+            # Clear all ongoing states EXCEPT continue_data
             session.update({
                 'onboarding': False,
                 'awaiting_product_selection': False,
@@ -1844,6 +1926,7 @@ I need to know about your business first to create personalized marketing conten
                 'managing_profile': False,
                 'awaiting_qstn': False,
                 'awaiting_4wd': False,
+                # Note: continue_data is preserved for 'cont' command
             })
     
     # ✅ Handle QSTN command (NEW - Available for ALL plans)
@@ -1886,14 +1969,16 @@ Ask me anything about your business operations, marketing, or customer service:"
             qstn_response = handle_qstn_command(phone_number, user_profile, question)
             print(f"🚨 QSTN: Response generated, length: {len(qstn_response)}")
             
-            # USE EXISTING TRUNCATION
-            if len(qstn_response) > 1600:
-                print("🚨 WARNING: Response too long, truncating...")
-                qstn_response = truncate_message(qstn_response, max_length=1600)  # Use WhatsApp limit
-                print(f"🚨 TRUNCATED RESPONSE LENGTH: {len(qstn_response)}")
-            
-            resp.message(qstn_response)
-            print(f"🚨 QSTN: Response sent to user, length: {len(qstn_response)}")
+            # Check if response is long enough to need continuation
+            if len(qstn_response) > 1000:
+                # Use continue system for long responses
+                first_part = setup_continue_session(session, 'qstn', qstn_response, {'question': question})
+                resp.message(first_part)
+                print(f"🚨 QSTN: Using continue system, first part length: {len(first_part)}")
+            else:
+                # Send directly for short responses
+                resp.message(qstn_response)
+                print(f"🚨 QSTN: Direct response sent, length: {len(qstn_response)}")
             
             update_message_usage(user_profile['id'])
             print("🚨 QSTN: Response successfully sent")
@@ -1950,7 +2035,17 @@ Paste or forward the customer message now:""")
         analysis_response = handle_4wd_command(phone_number, user_profile, customer_message)
         print(f"🚨 4WD: Analysis generated, length: {len(analysis_response)}")
         
-        resp.message(analysis_response)
+        # Check if response is long enough to need continuation
+        if len(analysis_response) > 1000:
+            # Use continue system for long responses
+            first_part = setup_continue_session(session, '4wd', analysis_response, {'customer_message': customer_message})
+            resp.message(first_part)
+            print(f"🚨 4WD: Using continue system, first part length: {len(first_part)}")
+        else:
+            # Send directly for short responses
+            resp.message(analysis_response)
+            print(f"🚨 4WD: Direct response sent, length: {len(analysis_response)}")
+        
         update_message_usage(user_profile['id'])
         print("🚨 4WD: Response sent to user")
         return str(resp)
@@ -1958,12 +2053,24 @@ Paste or forward the customer message now:""")
     # ✅ Handle NEW Pro plan commands
     if incoming_msg.strip() == 'trends':
         trends_response = handle_trends_command(phone_number, user_profile)
-        resp.message(trends_response)
+        
+        # Check if response is long enough to need continuation
+        if len(trends_response) > 1000:
+            first_part = setup_continue_session(session, 'trends', trends_response)
+            resp.message(first_part)
+        else:
+            resp.message(trends_response)
         return str(resp)
     
     elif incoming_msg.strip() == 'competitor':
         competitor_response = handle_competitor_command(phone_number, user_profile)
-        resp.message(competitor_response)
+        
+        # Check if response is long enough to need continuation
+        if len(competitor_response) > 1000:
+            first_part = setup_continue_session(session, 'competitor', competitor_response)
+            resp.message(first_part)
+        else:
+            resp.message(competitor_response)
         return str(resp)
     
     # ✅ Handle profile management flow
@@ -2038,25 +2145,29 @@ Paste or forward the customer message now:""")
             ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
             print(f"🚨 IDEAS GENERATED: {len(ideas)} characters")
             
-            # Message length check and truncation
-            if len(ideas) > 1600:
-                print("🚨 WARNING: Message too long, truncating...")
-                ideas = truncate_message(ideas)
-                print(f"🚨 TRUNCATED IDEAS LENGTH: {len(ideas)} characters")
+            # Check if response is long enough to need continuation
+            if len(ideas) > 1000:
+                # Use continue system for long responses
+                content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
+                header = f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:"
+                full_content = header + "\n\n" + ideas
+                
+                first_part = setup_continue_session(session, 'ideas', full_content, {'products': selected_products, 'output_type': output_type})
+                resp.message(first_part)
+                print(f"🚨 IDEAS: Using continue system, first part length: {len(first_part)}")
+            else:
+                # Different headers for each type
+                headers = {
+                    'ideas': "🎯 SOCIAL MEDIA CONTENT IDEAS",
+                    'pro_ideas': "🚀 PREMIUM VIRAL CONTENT CONCEPTS", 
+                    'strategies': "📊 COMPREHENSIVE MARKETING STRATEGY"
+                }
+                header = headers.get(output_type, "🎯 MARKETING CONTENT")
+                response_text = f"{header} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
+                
+                resp.message(response_text)
+                print(f"🚨 IDEAS: Direct response sent, length: {len(response_text)}")
             
-            # Different headers for each type
-            headers = {
-                'ideas': "🎯 SOCIAL MEDIA CONTENT IDEAS",
-                'pro_ideas': "🚀 PREMIUM VIRAL CONTENT CONCEPTS",
-                'strategies': "📊 COMPREHENSIVE MARKETING STRATEGY"
-            }
-            header = headers.get(output_type, "🎯 MARKETING CONTENT")
-            response_text = f"{header} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
-            
-            
-            print(f"🚨 FINAL RESPONSE LENGTH: {len(response_text)} characters")
-            print(f"🚨 SENDING RESPONSE TO USER")
-            resp.message(response_text)
             update_message_usage(user_profile['id'])
             return str(resp)
         else:
