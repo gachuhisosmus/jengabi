@@ -542,11 +542,8 @@ def get_or_create_profile(phone_number):
 
 def start_business_onboarding(phone_number, user_profile):
     """Start the business profile collection process"""
-    
-    
     session = ensure_user_session(phone_number)
         
-    
     # Clear any existing state and start fresh
     session.update({
         'onboarding': True,
@@ -574,12 +571,10 @@ You can also reply 'cancel' to stop onboarding."""
         session['onboarding'] = False
         session['onboarding_step'] = 0
         
-        
         return True, "Onboarding cancelled. Reply 'hello' to start again when you're ready."
+    
     step = session.get('onboarding_step', 0)
     business_data = session.get('business_data', {})
-    
-    
     
     steps = [
         {"question": "What's your business name?", "field": "business_name"},
@@ -630,11 +625,7 @@ Reply 'ideas' to generate social media marketing ideas, 'strat' for strategies, 
     return False, steps[step]["question"]
 
 def start_product_selection(phone_number, user_profile):
-    # Initialize a session for the user if it doesn't exist
-    
     """Start product-based marketing idea generation"""
-    # Always initialize session first
-    
     session = ensure_user_session(phone_number)
     session['awaiting_product_selection'] = True
     
@@ -1759,6 +1750,9 @@ def webhook():
     
     print(f"DEBUG: Received message '{incoming_msg}' from {phone_number}")
     print(f"🔍 USER SESSION STATE: {session}")
+    print(f"🔍 DEBUG: Processing message '{incoming_msg}'")
+    print(f"🔍 DEBUG: Session state - awaiting_qstn: {session.get('awaiting_qstn')}")
+    print(f"🔍 DEBUG: Session state - awaiting_4wd: {session.get('awaiting_4wd')}")
     
     resp = MessagingResponse()
     user_profile = get_or_create_profile(phone_number)
@@ -1860,9 +1854,6 @@ I need to know about your business first to create personalized marketing conten
         
         # Set session state for QSTN question
         session['awaiting_qstn'] = True
-        user_sessions[phone_number] = {}
-        session = ensure_user_session(phone_number)
-        session['awaiting_qstn'] = True
         resp.message("""*🤔 BUSINESS ADVICE REQUEST*
 
 What's your business question? I'll provide personalized advice based on your business type and context.
@@ -1874,51 +1865,44 @@ Examples:
 
 Ask me anything about your business operations, marketing, or customer service:""")
         return str(resp)
-    
+
     # ✅ Handle QSTN question input
     if session.get('awaiting_qstn'):
-       print(f"🚨 QSTN FOLLOW-UP: Processing question: '{incoming_msg}'")
-    
-    # CRITICAL: Clear state immediately
-    session['awaiting_qstn'] = False 
-    
-    question = incoming_msg.strip()
-    
-    if not question or len(question) < 5:
-        resp.message("Please ask a specific business question (at least 5 characters). Reply 'qstn' to try again.")
-        return str(resp)
-    
-    print("🚨 QSTN: Generating business advice...")
-    
-    try:
-        # Generate business advice
-        qstn_response = handle_qstn_command(phone_number, user_profile, question)
-        print(f"🚨 QSTN: Response generated, length: {len(qstn_response)}")
+        print(f"🚨 QSTN FOLLOW-UP: Processing question: '{incoming_msg}'")
         
-        # USE EXISTING TRUNCATION
-        if len(qstn_response) > 1600:
-            print("🚨 WARNING: Response too long, truncating...")
-            qstn_response = truncate_message(qstn_response, max_length=1600)  # Use WhatsApp limit
-            print(f"🚨 TRUNCATED RESPONSE LENGTH: {len(qstn_response)}")
+        # CRITICAL: Clear state immediately
+        session['awaiting_qstn'] = False 
         
-        resp.message(qstn_response)
-        print(f"🚨 QSTN: Response sent to user, length: {len(qstn_response)}")
+        question = incoming_msg.strip()
         
-        # VERIFY RESPONSE
-        if len(resp.to_string()) < 100:
-            print("❌ CRITICAL: Response too short, sending fallback")
-            fallback_resp = MessagingResponse()
-            fallback_resp.message("I've prepared your answer but encountered a delivery issue. Please try again.")
-            return str(fallback_resp)
+        if not question or len(question) < 5:
+            resp.message("Please ask a specific business question (at least 5 characters). Reply 'qstn' to try again.")
+            return str(resp)
+        
+        print("🚨 QSTN: Generating business advice...")
+        
+        try:
+            # Generate business advice
+            qstn_response = handle_qstn_command(phone_number, user_profile, question)
+            print(f"🚨 QSTN: Response generated, length: {len(qstn_response)}")
             
-        update_message_usage(user_profile['id'])
-        print("🚨 QSTN: Response successfully sent")
-        return str(resp)
-        
-    except Exception as e:
-        print(f"❌ QSTN ERROR: {e}")
-        resp.message("Sorry, I encountered an error while processing your question. Please try again.")
-        return str(resp)
+            # USE EXISTING TRUNCATION
+            if len(qstn_response) > 1600:
+                print("🚨 WARNING: Response too long, truncating...")
+                qstn_response = truncate_message(qstn_response, max_length=1600)  # Use WhatsApp limit
+                print(f"🚨 TRUNCATED RESPONSE LENGTH: {len(qstn_response)}")
+            
+            resp.message(qstn_response)
+            print(f"🚨 QSTN: Response sent to user, length: {len(qstn_response)}")
+            
+            update_message_usage(user_profile['id'])
+            print("🚨 QSTN: Response successfully sent")
+            return str(resp)
+            
+        except Exception as e:
+            print(f"❌ QSTN ERROR: {e}")
+            resp.message("Sorry, I encountered an error while processing your question. Please try again.")
+            return str(resp)
     
     # ✅ Handle 4WD command (NEW - Available for ALL plans)
     if incoming_msg.strip() == '4wd':
@@ -1950,8 +1934,6 @@ Paste or forward the customer message now:""")
     # ✅ Handle 4WD message input
     if session.get('awaiting_4wd'):
         print(f"🚨 4WD FOLLOW-UP: Processing customer message: '{incoming_msg}'")
-        
-        
         
         # ALWAYS clear the 4WD state first
         session['awaiting_4wd'] = False 
@@ -2172,7 +2154,7 @@ Paste or forward the customer message now:""")
         try:
             # Check subscription with better error handling
             has_subscription = check_subscription(user_profile['id'])
-            print(f"🔍 DEBUG STRAT: check_subscription returned: {has_sub}")
+            print(f"🔍 DEBUG STRAT: check_subscription returned: {has_subscription}")
             
             if has_subscription:
                 # User HAS a subscription
