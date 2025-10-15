@@ -1896,7 +1896,7 @@ Reply with your answers to complete your profile setup, or reply 'cancel' to sto
 I need to know about your business first to create personalized marketing content.
 
 {onboarding_message}""")
-    return str(resp)            
+        return str(resp)            
         
         
         
