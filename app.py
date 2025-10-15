@@ -1850,6 +1850,14 @@ def webhook():
             resp.message("No ongoing content to continue. Start a new command like 'ideas', 'strat', 'qstn', or '4wd'.")
             return str(resp)
     
+    # ✅ CRITICAL FIX: Clear continue_data for regular messages (not 'cont' command)
+    # This prevents the session from being stuck with old continue_data
+    if (session.get('continue_data') and 
+        incoming_msg.strip() not in ['cont'] and
+        not any(session.get(state) for state in ['awaiting_qstn', 'awaiting_4wd', 'awaiting_product_selection', 'onboarding', 'managing_profile'])):
+        print(f"🔄 CLEARING STALE continue_data for regular message: '{incoming_msg}'")
+        session['continue_data'] = None
+    
     # ✅ ENFORCE PROFILE COMPLETION - Check if profile is incomplete
     if not user_profile.get('profile_complete'):
         # If user is already in product selection, continue with that
@@ -1920,7 +1928,7 @@ I need to know about your business first to create personalized marketing conten
     if incoming_msg.strip() in priority_commands:
         if phone_number in user_sessions:
             session = ensure_user_session(phone_number)
-            # Clear all ongoing states EXCEPT continue_data
+            # Clear all ongoing states including continue_data for priority commands
             session.update({
                 'onboarding': False,
                 'awaiting_product_selection': False,
@@ -1929,7 +1937,7 @@ I need to know about your business first to create personalized marketing conten
                 'managing_profile': False,
                 'awaiting_qstn': False,
                 'awaiting_4wd': False,
-                # Note: continue_data is preserved for 'cont' command
+                'continue_data': None,  # Clear continue_data for priority commands
             })
     
     # ✅ Handle QSTN command (NEW - Available for ALL plans)
@@ -1937,6 +1945,9 @@ I need to know about your business first to create personalized marketing conten
         if not check_subscription(user_profile['id']):
             resp.message("You need a subscription to use business Q&A. Reply 'subscribe' to choose a plan.")
             return str(resp)
+        
+        # Clear any existing continue_data when starting new QSTN
+        session['continue_data'] = None
         
         # Set session state for QSTN question
         session['awaiting_qstn'] = True
@@ -1997,6 +2008,9 @@ Ask me anything about your business operations, marketing, or customer service:"
         if not check_subscription(user_profile['id']):
             resp.message("You need a subscription to analyze customer messages. Reply 'subscribe' to choose a plan.")
             return str(resp)
+        
+        # Clear any existing continue_data when starting new 4WD
+        session['continue_data'] = None
         
         # Set session state for 4WD message
         session['awaiting_4wd'] = True
