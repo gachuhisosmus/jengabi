@@ -553,7 +553,7 @@ def start_business_onboarding(phone_number, user_profile):
         'business_data': {}
     })
     
-    return "What's your business name?"
+    return "👋 Let's set up your business profile!\n\nI need to know about your business first to create personalized marketing content.\n\n*Question 1/7:* What's your business name?\n\n💡 You can reply 'help' for assistance or 'cancel' to stop at any time."
 
 def handle_onboarding_response(phone_number, incoming_msg, user_profile):
     """Handle business profile onboarding steps"""
@@ -612,19 +612,27 @@ You can also reply 'cancel' to stop onboarding."""
         user_sessions[phone_number]['onboarding'] = False
         user_sessions[phone_number]['onboarding_step'] = 0
         
-        return True, """
-✅ PROFILE COMPLETE! Welcome to JENGABI your business marketing assistance. 
+        business_name = business_data.get('business_name', 'your business')
+        return True, f"""
+✅ PROFILE COMPLETE! Welcome to JengaBIBOT - your business marketing assistant! 
 
-Now I can create personalized social media marketing content for your business!
+Now I can create personalized social media marketing content specifically for *{business_name}*!
 
-Reply 'ideas' to generate social media marketing ideas, 'strat' for strategies, or 'subscribe' to choose a plan.
-"""
+🎯 *Here's what you can do now:*
+• Reply *'ideas'* - Generate social media marketing ideas
+• Reply *'strat'* - Get marketing strategies (Growth/Pro plans)
+• Reply *'qstn'* - Business advice & questions  
+• Reply *'4wd'* - Customer message analysis
+• Reply *'subscribe'* - Choose a plan to unlock all features
+• Reply *'profile'* - Manage your business info
+
+What would you like to start with?"""
     
     # Ask next question
     session['onboarding_step'] = step + 1
     session['business_data'] = business_data
     
-    return False, steps[step]["question"]
+    return False, f"*Question {step + 1}/7:* {steps[step]['question']}"
 
 def start_product_selection(phone_number, user_profile):
     """Start product-based marketing idea generation"""
@@ -1830,6 +1838,54 @@ def webhook():
     print(f"DEBUG: User profile complete: {user_profile.get('profile_complete')}")
     print(f"DEBUG: User message count: {user_profile.get('used_messages')} / {user_profile.get('max_messages')}")
     
+    # ✅ FIXED ONBOARDING FLOW: Check if profile is incomplete and handle properly
+    if not user_profile.get('profile_complete'):
+        # If user is already in onboarding, handle their response
+        if session.get('onboarding'):
+            print(f"🚨 ONBOARDING: Processing onboarding response: '{incoming_msg}'")
+            onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
+            resp.message(response_message)
+            return str(resp)
+        
+        # If user sends priority commands during incomplete profile
+        priority_commands = ['help', 'cancel', 'status']
+        if incoming_msg.strip() in priority_commands:
+            if incoming_msg.strip() == 'help':
+                resp.message("""🆘 PROFILE SETUP HELP:
+
+I need to know about your business first to create personalized marketing content.
+
+Let's set up your business profile with a few quick questions.
+
+Reply with your answers to complete your profile setup, or reply 'cancel' to stop onboarding.""")
+                return str(resp)
+            elif incoming_msg.strip() == 'cancel':
+                session['onboarding'] = False
+                resp.message("Onboarding cancelled. Reply 'hello' to start again when you're ready.")
+                return str(resp)
+            elif incoming_msg.strip() == 'status':
+                resp.message("""📊 PROFILE STATUS: Incomplete
+
+I need to know about your business first to provide personalized marketing content.
+
+Let's complete your profile setup with a few quick questions. Reply with any message to continue, or 'help' for assistance.""")
+                return str(resp)
+        
+        # For ANY other command/message when profile is incomplete, start onboarding
+        print(f"🚨 NEW USER: Starting onboarding for message: '{incoming_msg}'")
+        onboarding_message = start_business_onboarding(phone_number, user_profile)
+        resp.message(f"""👋 Welcome to JengaBIBOT!
+
+I see you're new here! Let me help you set up your business profile so I can create personalized marketing content for you.
+
+{onboarding_message}
+
+💡 *Tip:* You can reply 'help' at any time for assistance or 'cancel' to stop onboarding.""")
+
+        # Update message usage for onboarding start
+        update_message_usage(user_profile['id'])
+        return str(resp)
+    
     # ✅ Handle CONTINUE command first (priority)
     if incoming_msg.strip() == 'cont':
         if session.get('continue_data'):
@@ -1858,48 +1914,6 @@ def webhook():
         print(f"🔄 CLEARING STALE continue_data for regular message: '{incoming_msg}'")
         session['continue_data'] = None
     
-    # ✅ ENFORCE PROFILE COMPLETION - Check if profile is incomplete
-    if not user_profile.get('profile_complete'):
-        # If user is already in product selection, continue with that
-        session = ensure_user_session(phone_number)
-        
-        # If user is already in onboarding, handle their response
-        if session.get('onboarding'):
-            print(f"🚨 ONBOARDING: Processing onboarding response: '{incoming_msg}'")
-            onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
-            resp.message(response_message)
-            return str(resp)
-            
-        # If user sends priority commands during incomplete profile
-        priority_commands = ['help', 'cancel']
-        if incoming_msg.strip() in priority_commands:
-            if incoming_msg.strip() == 'help':
-                resp.message("""🆘 PROFILE SETUP HELP:
-
-I need to know about your business first to create personalized marketing content.
-
-Let's set up your business profile with a few quick questions.
-
-Reply with your answers to complete your profile setup, or reply 'cancel' to stop onboarding.""")
-
-                return str(resp)
-            elif incoming_msg.strip() == 'cancel':
-                session['onboarding'] = False
-                resp.message("Onboarding cancelled. Reply 'hello' to start again when you're ready.")
-                return str(resp)
-                
-            # For ANY other command/message when profile is incomplete, start onboarding
-            print(f"🚨 NEW USER: Starting onboarding for message: '{incoming_msg}'")
-            onboarding_message = start_business_onboarding(phone_number, user_profile)
-            resp.message(f"""👋 Welcome to JengaBIBOT!
-            
-I need to know about your business first to create personalized marketing content.
-
-{onboarding_message}""")
-        return str(resp)            
-        
-        
-        
     # ✅ PRIORITY COMMANDS CHECK - Clear any ongoing flows (only for complete profiles)
     priority_commands = ['ideas', 'strat', 'status', 'subscribe', 'help', 'exit', 'cancel', 'profile', 'trends', 'competitor', 'qstn', '4wd']
     if incoming_msg.strip() in priority_commands:
