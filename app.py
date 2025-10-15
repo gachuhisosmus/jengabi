@@ -2204,7 +2204,7 @@ Paste or forward the customer message now:""")
         elif 'pro' in incoming_msg:
             selected_plan = 'pro'
         else:
-            resp.message("Please reply with 'Basic', 'Growth', or 'Pro'.")
+            resp.message("Please reply with 'Basic', 'Growth', 'Pro' or 'exit' to cancel subscription process.")
             return str(resp)
         
         session['state'] = None
