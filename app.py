@@ -1833,7 +1833,129 @@ def webhook():
     if not user_profile:
         resp.message("Sorry, we're experiencing technical difficulties. Please try again later.")
         return str(resp)
-    
+
+# Add to your existing Flask app (app.py) For Jengabi-app integration
+
+@app.route('/api/generate-ideas', methods=['POST'])
+def api_generate_ideas():
+    try:
+        data = request.get_json()
+        products = data.get('products', [])
+        platform = data.get('platform', 'instagram')
+        business_context = data.get('business_context', {})
+        output_type = data.get('output_type', 'ideas')
+        
+        print(f"🔄 API: Generating ideas for {products} on {platform}")
+        
+        # Create a mock user_profile from business_context for your existing function
+        mock_user_profile = {
+            'business_name': business_context.get('business_name', ''),
+            'business_type': business_context.get('business_type', ''),
+            'business_location': business_context.get('business_location', ''),
+            'business_products': business_context.get('business_products', products),
+            'id': 'api-user'  # Mock ID for API calls
+        }
+        
+        # Use your existing generate_realistic_ideas function
+        ideas_content = generate_realistic_ideas(
+            mock_user_profile, 
+            products, 
+            output_type, 
+            len(products)
+        )
+        
+        print(f"✅ API: Generated {len(ideas_content) if ideas_content else 0} characters")
+        
+        # Format response for frontend - create multiple ideas from content
+        ideas_list = []
+        
+        if ideas_content:
+            # Split by numbered items or create structured ideas
+            lines = ideas_content.split('\n')
+            idea_count = 0
+            
+            for i, line in enumerate(lines):
+                line = line.strip()
+                # Look for numbered items or bullet points
+                if (line.startswith('1.') or line.startswith('2.') or line.startswith('3.') or 
+                    line.startswith('•') or line.startswith('-') or
+                    (len(line) > 10 and i < 5)):  # First few substantial lines
+                    
+                    # Clean the line
+                    clean_line = line.replace('1.', '').replace('2.', '').replace('3.', '').replace('•', '').replace('-', '').strip()
+                    
+                    if len(clean_line) > 20:  # Only include substantial content
+                        ideas_list.append({
+                            'id': len(ideas_list) + 1,
+                            'content': clean_line,
+                            'platform': platform,
+                            'type': 'post',
+                            'engagement': 'high' if idea_count == 0 else 'medium'
+                        })
+                        idea_count += 1
+                        
+                        # Limit to 3 ideas max
+                        if idea_count >= 3:
+                            break
+            
+            # Fallback: if no structured ideas found, use the content directly
+            if not ideas_list and ideas_content:
+                # Split content into chunks for multiple ideas
+                content_chunks = []
+                current_chunk = ""
+                
+                sentences = ideas_content.split('. ')
+                for sentence in sentences:
+                    if len(current_chunk + sentence) < 200:  # Limit chunk size
+                        current_chunk += sentence + '. '
+                    else:
+                        if current_chunk:
+                            content_chunks.append(current_chunk.strip())
+                        current_chunk = sentence + '. '
+                
+                if current_chunk:
+                    content_chunks.append(current_chunk.strip())
+                
+                # Create ideas from chunks
+                for i, chunk in enumerate(content_chunks[:3]):  # Max 3 ideas
+                    ideas_list.append({
+                        'id': i + 1,
+                        'content': chunk,
+                        'platform': platform,
+                        'type': 'post',
+                        'engagement': 'high' if i == 0 else 'medium'
+                    })
+        
+        # Final fallback: single idea
+        if not ideas_list:
+            ideas_list = [{
+                'id': 1,
+                'content': f"🎯 Marketing ideas for {', '.join(products)} on {platform}. Focus on engaging your audience with authentic content that showcases your unique value. #AfricanBusiness #SupportLocal",
+                'platform': platform,
+                'type': 'post',
+                'engagement': 'high'
+            }]
+        
+        print(f"📦 API: Returning {len(ideas_list)} ideas to frontend")
+        return jsonify({'ideas': ideas_list})
+        
+    except Exception as e:
+        print(f"❌ API Error: {e}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        return jsonify({'error': str(e), 'message': 'Failed to generate ideas'}), 500
+
+@app.route('/api/health', methods=['GET'])
+def api_health():
+    return jsonify({
+        'status': 'healthy', 
+        'service': 'JengaBI Bot API',
+        'timestamp': datetime.now().isoformat()
+    })
+
+# CORS is already handled by your existing Twilio setup
+# === END ADD: COMPATIBLE API ROUTES ===
+
     # DEBUG: Log user profile status
     print(f"DEBUG: User profile complete: {user_profile.get('profile_complete')}")
     print(f"DEBUG: User message count: {user_profile.get('used_messages')} / {user_profile.get('max_messages')}")
@@ -2472,6 +2594,7 @@ I'm here to help your business with social media marketing!"""
         resp.message("Hello! I'm here to help your business. Reply *'help'* to see available commands.")
     
     return str(resp)
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', debug=False)
