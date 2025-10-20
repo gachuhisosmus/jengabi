@@ -107,6 +107,8 @@ def api_generate_ideas():
         platform = data.get('platform', 'instagram')
         business_context = data.get('business_context', {})
         output_type = data.get('output_type', 'ideas')
+
+        effective_output_type = 'ideas'
         
         print(f"🔄 API: Generating ideas for {products} on {platform}")
         
@@ -1046,9 +1048,9 @@ def generate_realistic_ideas(user_profile, products, output_type='ideas', num_id
 def get_system_prompt(output_type):
     """Get specialized system prompts for each output type"""
     prompts = {
-        'ideas': "You are a creative social media manager for African small businesses. Create engaging, ready-to-use social media content that drives immediate engagement and follows platform best practices.",
-        'pro_ideas': "You are a viral content expert and social media algorithm specialist. Create trend-aware, high-conversion social media concepts that leverage psychological triggers and platform algorithms for maximum reach and engagement.",
-        'strategies': "You are a strategic marketing director with expertise in African markets. Develop comprehensive, data-driven marketing strategies with clear roadmaps, KPIs, and measurable outcomes for business growth."
+        'ideas': "You are a creative social media manager for African small businesses. Create engaging, applicable, and real ready-to-use social media content that drives immediate engagement and follows platform best practices.",
+        'pro_ideas': "You are a viral content expert and social media algorithm specialist. Create trend-aware, applicable, and real high-conversion social media concepts that leverage psychological triggers and platform algorithms for maximum reach and engagement.",
+        'strategies': "You are a strategic marketing director with expertise in African markets. Develop comprehensive, applicable, and real data-driven marketing strategies with clear roadmaps, KPIs, and measurable outcomes for business growth."
     }
     return prompts.get(output_type, "You are a marketing expert for African businesses.")
 
@@ -1214,7 +1216,7 @@ def handle_qstn_command(phone_number, user_profile, question):
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a practical business consultant for Kenyan small businesses. Provide specific, actionable advice that is realistic and culturally appropriate."},
+                {"role": "system", "content": "You are a practical business consultant for Kenyan small businesses. Provide specific, actionable advice that is realistic and culturally appropriate and applicable."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=300,
@@ -1292,7 +1294,7 @@ def handle_4wd_command(phone_number, user_profile, customer_message):
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a customer experience expert for Kenyan small businesses. Analyze customer messages and provide practical, actionable insights."},
+                {"role": "system", "content": "You are a customer experience expert for Kenyan small businesses. Analyze customer messages and provide practical, actionable, and applicable insights."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=300,
