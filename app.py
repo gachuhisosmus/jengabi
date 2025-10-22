@@ -210,6 +210,49 @@ def api_generate_ideas():
         print(f"❌ Traceback: {traceback.format_exc()}")
         return jsonify({'error': str(e), 'message': 'Failed to generate ideas'}), 500
 
+@app.route('/api/bot/business-answers', methods=['POST'])
+def api_business_answers():
+    try:
+        data = request.get_json()
+        question = data.get('question', '')
+        business_context = data.get('business_context', {})
+        
+        print(f"🔄 API: Processing business question: {question}")
+        
+        # Create a mock user_profile from business_context for your existing function
+        mock_user_profile = {
+            'business_name': business_context.get('business_name', ''),
+            'business_type': business_context.get('business_type', ''),
+            'business_location': business_context.get('business_location', ''),
+            'business_products': business_context.get('business_products', []),
+            'id': 'api-user'  # Mock ID for API calls
+        }
+        
+        # Use your existing handle_qstn_command function
+        answer_content = handle_qstn_command('api-user', mock_user_profile, question)
+        
+        print(f"✅ API: Generated business answer, length: {len(answer_content)}")
+        
+        # Format response for frontend
+        return jsonify({
+            'success': True,
+            'data': {
+                'answer': answer_content,
+                'question': question,
+                'type': 'business_advice'
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Business Answers API Error: {e}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
+        return jsonify({
+            'success': False, 
+            'error': str(e), 
+            'message': 'Failed to generate business answer'
+        }), 500
+
 @app.route('/api/health', methods=['GET'])
 def api_health():
     return jsonify({
