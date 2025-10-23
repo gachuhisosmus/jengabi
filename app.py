@@ -1228,61 +1228,70 @@ def handle_qstn_command(phone_number, user_profile, question):
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
-        # Build business context for personalized answers
+        # Build detailed business context for personalized answers
         business_context = f"""
-        Business Context:
-        - Name: {user_profile.get('business_name', 'Not specified')}
-        - Type: {user_profile.get('business_type', 'Not specified')}
+        Business Details:
+        - Business Name: {user_profile.get('business_name', 'Not specified')}
+        - Business Type: {user_profile.get('business_type', 'Not specified')}
         - Location: {user_profile.get('business_location', 'Kenya')}
         - Products/Services: {', '.join(user_profile.get('business_products', []))}
         - Marketing Goals: {user_profile.get('business_marketing_goals', 'Not specified')}
         """
         
         prompt = f"""
-        Act as a business consultant specializing in African small businesses.
+        ACT as a PRACTICAL business consultant for Kenyan/African small businesses.
         
         {business_context}
         
-        Question: {question}
+        USER QUESTION: "{question}"
         
-        Provide practical, actionable advice that is:
-        - Specific to their business type and location in Kenya
-        - Realistic and achievable for a small business
-        - Focused on immediate implementation
-        - Culturally appropriate for the Kenyan market
-        - Includes concrete steps or examples
+        CRITICAL INSTRUCTIONS:
+        1. FIRST analyze if this is a GENERAL KNOWLEDGE question vs BUSINESS question
+        2. If it's GENERAL KNOWLEDGE (math, facts, definitions): Give direct, factual answers
+        3. If it's BUSINESS-RELATED: Provide specific, actionable advice for THIS business
+        4. ALWAYS consider the Kenyan/African business context
+        5. Be CONCISE and DIRECT - no generic templates
+        6. If the question is unclear, ask for clarification
         
-        Format your response with clear, actionable points using bullet points.
-        Keep it under 300 words and use simple, direct language.
+        EXAMPLES:
+        - "What is 1+1?" → "1+1 = 2" (direct answer)
+        - "How to price my products?" → "For your {user_profile.get('business_type')} in {user_profile.get('business_location')}, consider..."
+        - "Best marketing strategy?" → "Based on your {user_profile.get('business_type')}, focus on..."
+        
+        Provide your answer in this format:
+        🎯 DIRECT ANSWER: [Brief direct answer if factual]
+        💡 BUSINESS CONTEXT: [If business-related, specific advice]
+        🚀 ACTION STEPS: [If applicable, 1-3 concrete steps]
+        
+        Now answer: "{question}"
         """
         
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are a practical business consultant for Kenyan small businesses. Provide specific, actionable advice that is realistic and culturally appropriate and applicable."},
+                {"role": "system", "content": "You are a practical, no-nonsense business advisor for African SMEs. Answer directly and specifically. Never use generic template responses."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=300,
+            max_tokens=400,  # Shorter, more focused responses
             temperature=0.7,
         )
         
         answer = response.choices[0].message.content.strip()
         
-        # Format the response with bold text
-        formatted_response = f"""*🤔 BUSINESS ADVICE FOR {user_profile.get('business_name', 'YOUR BUSINESS').upper()}*
+        # Format the response
+        formatted_response = f"""*🤔 BUSINESS Q&A FOR {user_profile.get('business_name', 'YOUR BUSINESS').upper()}*
 
 *Your Question:* {question}
 
-*My Advice:*
 {answer}
 
-*💡 Tip:* Use this advice to improve your business operations and customer experience."""
+*💡 Need more specific advice? Provide more context about your business challenge.*"""
 
         return formatted_response
         
     except Exception as e:
         print(f"QSTN command error: {e}")
-        return "Sorry, I'm having trouble generating business advice right now. Please try again in a moment."
+        return "I'm analyzing your question. Please try again in a moment."
 
 # ===== NEW 4WD COMMAND FUNCTION =====
 
