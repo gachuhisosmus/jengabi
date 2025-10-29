@@ -216,6 +216,10 @@ def api_business_answers():
         data = request.get_json()
         question = data.get('question', '')
         user_id = data.get('user_id')  # ✅ REQUIRED: Get user ID
+
+        print(f"🔍 DEBUG: User ID received: {user_id}")
+
+
         business_context = data.get('business_context', {})
         
         # ✅ VALIDATION
@@ -230,8 +234,23 @@ def api_business_answers():
         
         # ✅ GET REAL USER PROFILE (not mock data)
         user_profile = get_or_create_profile(f"web-{user_id}")
+
+        # ✅ COMPREHENSIVE DEBUGGING
+        print(f"🔍 DEBUG: Full user profile: {user_profile}")
+        print(f"🔍 DEBUG: Business name: '{user_profile.get('business_name')}'")
+        print(f"🔍 DEBUG: Business name type: {type(user_profile.get('business_name'))}")
+        print(f"🔍 DEBUG: Business name length: {len(user_profile.get('business_name', ''))}")
+        print(f"🔍 DEBUG: Profile complete: {user_profile.get('profile_complete')}")
+
         if not user_profile:
             return jsonify({'success': False, 'error': 'User profile not found'}), 404
+        
+        # Check if it's empty string, None, or actually has data
+        business_name = user_profile.get('business_name')
+        if business_name:
+            print(f"✅ BUSINESS NAME FOUND: '{business_name}'")
+        else:
+            print(f"❌ BUSINESS NAME MISSING or EMPTY")
         
         # ✅ ANONYMIZE USER DATA
         safe_profile = anonymizer.anonymize_business_data({
