@@ -215,21 +215,40 @@ def api_business_answers():
     try:
         data = request.get_json()
         question = data.get('question', '')
+        user_id = data.get('user_id')  # ✅ REQUIRED: Get user ID
         business_context = data.get('business_context', {})
         
-        print(f"🔄 API: Processing business question: {question}")
+        # ✅ VALIDATION
+        if not user_id:
+            return jsonify({'success': False, 'error': 'User ID required'}), 400
         
-        # Create a mock user_profile from business_context for your existing function
-        mock_user_profile = {
-            'business_name': business_context.get('business_name', ''),
-            'business_type': business_context.get('business_type', ''),
-            'business_location': business_context.get('business_location', ''),
-            'business_products': business_context.get('business_products', []),
-            'id': 'api-user'  # Mock ID for API calls
-        }
+        # ✅ SANITIZE QUESTION
+        from app.anonymization import anonymizer
+        safe_question = anonymizer.remove_sensitive_terms(question)
         
-        # Use your existing handle_qstn_command function
-        answer_content = handle_qstn_command('api-user', mock_user_profile, question)
+        print(f"🔄 API: Processing business question from user {user_id}: {safe_question}")
+        
+        # ✅ GET REAL USER PROFILE (not mock data)
+        user_profile = get_or_create_profile(f"web-{user_id}")
+        if not user_profile:
+            return jsonify({'success': False, 'error': 'User profile not found'}), 404
+        
+        # ✅ ANONYMIZE USER DATA
+        safe_profile = anonymizer.anonymize_business_data({
+            'user_id': user_id,
+            'business_type': user_profile.get('business_type', 'general'),
+            'business_location': user_profile.get('business_location', ''),
+            'business_products': user_profile.get('business_products', []),
+            'employee_count': user_profile.get('employee_count', 0),
+            'monthly_revenue': user_profile.get('monthly_revenue', 0),
+            'start_date': user_profile.get('start_date', ''),
+            'business_name': user_profile.get('business_name', '')  # Will be removed in anonymization
+        })
+        
+        print(f"🔒 Using anonymized profile: {safe_profile}")
+        
+        # ✅ USE ANONYMIZED DATA FOR AI PROCESSING
+        answer_content = handle_qstn_command(user_id, safe_profile, safe_question)
         
         print(f"✅ API: Generated business answer, length: {len(answer_content)}")
         
@@ -238,7 +257,7 @@ def api_business_answers():
             'success': True,
             'data': {
                 'answer': answer_content,
-                'question': question,
+                'question': safe_question,  # Return sanitized question
                 'type': 'business_advice'
             }
         })
@@ -662,6 +681,12 @@ def get_or_create_profile(phone_number):
         # Check if the phone number already exists in the 'profiles' table
         response = supabase.table('profiles').select('*').eq('phone_number', phone_number).execute()
         
+        # ✅ FIX: Try searching by ID for web users
+        if len(response.data) == 0 and phone_number.startswith('web-'):
+            # Try finding by user ID (remove 'web-' prefix)
+            user_id = phone_number.replace('web-', '')
+            response = supabase.table('profiles').select('*').eq('id', user_id).execute()
+
         # If the user exists, return their data
         if len(response.data) > 0:
             print(f"User found: {response.data[0]}")
