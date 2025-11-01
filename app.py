@@ -212,8 +212,10 @@ def api_generate_ideas():
 
 @app.route('/api/bot/business-answers', methods=['POST'])
 def api_business_answers():
+    print("🟡 ENTERING BUSINESS ANSWERS ROUTE")
     try:
         data = request.get_json()
+        print(f"🟡 Received data: {data.keys()}")
         question = data.get('question', '')
         user_id = data.get('user_id')  # ✅ REQUIRED: Get user ID
 
