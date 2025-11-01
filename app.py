@@ -227,8 +227,8 @@ def api_business_answers():
             return jsonify({'success': False, 'error': 'User ID required'}), 400
         
         # ✅ SANITIZE QUESTION
-        from app.anonymization import anonymizer
-        safe_question = anonymizer.remove_sensitive_terms(question)
+        # from app.anonymization import anonymizer
+        # safe_question = anonymizer.remove_sensitive_terms(question)
         
         print(f"🔄 API: Processing business question from user {user_id}: {safe_question}")
         
