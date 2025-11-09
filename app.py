@@ -372,6 +372,60 @@ def api_web_business_answers():
             'error': str(e), 
             'message': 'Failed to generate business answer'
         }), 500
+    
+@app.route('/api/bot/sales-emergency', methods=['POST'])
+def api_sales_emergency():
+    """🆕 DEEP BUSINESS PROFILE + OPENAI SYNTHESIS"""
+    print("🟡 ENTERING BUSINESS INTELLIGENCE SYNTHESIS ROUTE")
+    try:
+        data = request.get_json()
+        question = data.get('question', '')
+        user_id = data.get('user_id')
+
+        if not user_id:
+            return jsonify({'success': False, 'error': 'User ID required'}), 400
+
+        user_profile = get_or_create_profile(f"web-{user_id}")
+        
+        if not user_profile:
+            return jsonify({'success': False, 'error': 'User profile not found'}), 404
+
+        sales_prompt = f"""
+        ACT as a BUSINESS INTELLIGENCE ENGINE that SYNTHESIZES real business data with market intelligence.
+
+        REAL BUSINESS DATA FROM PROFILE:
+        🏢 BUSINESS: {user_profile.get('business_name', 'Small Business')}
+        📋 INDUSTRY: {user_profile.get('business_type', 'Business')}
+        📍 LOCATION: {user_profile.get('business_location', 'Kenya')}
+        📦 PRODUCTS/SERVICES: {', '.join(user_profile.get('business_products', []))}
+
+        CURRENT EMERGENCY: {question}
+
+        CREATE TANGIBLE SOLUTIONS by combining their specific business context with market intelligence.
+        Provide immediate, actionable steps with specific numbers and local market adaptations.
+        """
+        
+        answer_content = handle_qstn_command(user_id, user_profile, sales_prompt)
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'answer': answer_content,
+                'question': question,
+                'type': 'sales_emergency',
+                'personalized_for': user_profile.get('business_name', 'Your Business'),
+                'business_type': user_profile.get('business_type', 'Business'),
+                'business_intelligence': True,
+                'profile_utilized': {
+                    'location': user_profile.get('business_location'),
+                    'products': user_profile.get('business_products', [])
+                }
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Sales Emergency API Error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500    
 
 @app.route('/api/bot/sales-advice', methods=['POST'])
 def sales_advice():
