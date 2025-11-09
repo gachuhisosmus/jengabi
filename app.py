@@ -390,27 +390,35 @@ def api_sales_emergency():
         if not user_profile:
             return jsonify({'success': False, 'error': 'User profile not found'}), 404
 
+        # 🆕 FIXED: This prompt is for AI processing only, not user display
         sales_prompt = f"""
         ACT as a BUSINESS INTELLIGENCE ENGINE that SYNTHESIZES real business data with market intelligence.
 
-        REAL BUSINESS DATA FROM PROFILE:
-        🏢 BUSINESS: {user_profile.get('business_name', 'Small Business')}
-        📋 INDUSTRY: {user_profile.get('business_type', 'Business')}
-        📍 LOCATION: {user_profile.get('business_location', 'Kenya')}
-        📦 PRODUCTS/SERVICES: {', '.join(user_profile.get('business_products', []))}
+        BUSINESS CONTEXT:
+        - Business: {user_profile.get('business_name', 'Small Business')}
+        - Industry: {user_profile.get('business_type', 'Business')}
+        - Location: {user_profile.get('business_location', 'Kenya')}
+        - Products: {', '.join(user_profile.get('business_products', []))}
 
-        CURRENT EMERGENCY: {question}
+        URGENT REQUEST: {question}
 
-        CREATE TANGIBLE SOLUTIONS by combining their specific business context with market intelligence.
-        Provide immediate, actionable steps with specific numbers and local market adaptations.
+        Create a TANGIBLE ACTION PLAN with:
+        • 3-4 specific, immediate actions they can take TODAY
+        • Actual numbers and pricing where possible
+        • Local market adaptations for their location
+        • Ready-to-use outreach templates
+
+        Focus on AFRICAN business context and MOBILE-FIRST solutions.
+        Provide concrete, actionable advice with specific steps.
         """
         
+        # 🆕 FIX: Generate AI response from the prompt
         answer_content = handle_qstn_command(user_id, user_profile, sales_prompt)
         
         return jsonify({
             'success': True,
             'data': {
-                'answer': answer_content,
+                'answer': answer_content,  # 🆕 This should be the AI response, not the prompt
                 'question': question,
                 'type': 'sales_emergency',
                 'personalized_for': user_profile.get('business_name', 'Your Business'),
