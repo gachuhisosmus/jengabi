@@ -86,7 +86,10 @@ def setup_telegram_webhook():
             data = response.json()
             if data.get('ok') and data.get('result'):
                 print("✅ Telegram webhook set successfully!")
-                print(f"✅ Webhook URL: {data.get('result', {}).get('url', 'Unknown')}")
+                if isinstance(data.get('result'), dict):
+                   print(f"✅ Webhook URL: {data.get('result', {}).get('url', 'Unknown')}")
+                else:
+                   print(f"✅ Webhook result: {data.get('result')}")
                 return True
             else:
                 print(f"❌ Telegram API error: {data}")
