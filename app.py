@@ -14,6 +14,8 @@ from supabase import create_client, Client
 import pytrends
 from pytrends.request import TrendReq
 from flask_cors import CORS
+import requests
+import json
 
 
 # Load environment variables
@@ -24,6 +26,10 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)
 CORS(app)
+
+# Telegram Configuration
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}" if TELEGRAM_TOKEN else None
 
 # Root route
 @app.route('/')
@@ -38,6 +44,30 @@ def home():
 
 # Initialize the Supabase client
 supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+
+# ===== TELEGRAM INTEGRATION =====
+def setup_telegram_webhook():
+    """Set Telegram webhook to receive messages"""
+    if not TELEGRAM_TOKEN:
+        print("❌ Telegram token not found - Telegram integration disabled")
+        return False
+    
+    webhook_url = f"https://your-app.onrender.com/telegram-webhook"  # Replace with your actual URL
+    
+    try:
+        response = requests.post(
+            f"{TELEGRAM_API_URL}/setWebhook",
+            json={"url": webhook_url}
+        )
+        if response.status_code == 200:
+            print("✅ Telegram webhook set successfully")
+            return True
+        else:
+            print(f"❌ Telegram webhook failed: {response.text}")
+            return False
+    except Exception as e:
+        print(f"❌ Telegram webhook error: {e}")
+        return False
 
 # Initialize user sessions dictionary
 user_sessions = {}
@@ -522,6 +552,101 @@ def api_health():
         'service': 'JengaBI Bot API',
         'timestamp': datetime.now().isoformat()
     })
+
+# ===== TELEGRAM WEBHOOK ROUTES =====
+@app.route('/telegram-webhook', methods=['POST'])
+def telegram_webhook():
+    """Receive messages from Telegram"""
+    try:
+        data = request.get_json()
+        print(f"📱 Telegram received: {json.dumps(data, indent=2)}")
+        
+        if 'message' in data:
+            message = data['message']
+            chat_id = message['chat']['id']
+            text = message.get('text', '')
+            
+            # Process using your existing logic
+            response_text = process_telegram_message(chat_id, text)
+            
+            # Send response back
+            send_telegram_message(chat_id, response_text)
+        
+        return "OK"
+    except Exception as e:
+        print(f"Telegram webhook error: {e}")
+        return "OK"
+
+def send_telegram_message(chat_id, text):
+    """Send message to Telegram user"""
+    try:
+        requests.post(
+            f"{TELEGRAM_API_URL}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "Markdown"
+            }
+        )
+    except Exception as e:
+        print(f"Telegram send error: {e}")
+
+def process_telegram_message(chat_id, incoming_msg):
+    """Process message using your existing business logic"""
+    # Use Telegram ID as phone number for session management
+    phone_number = f"telegram:{chat_id}"
+    
+    # Get or create user profile
+    user_profile = get_or_create_profile(phone_number)
+    
+    if not user_profile:
+        return "Sorry, I'm having technical issues. Please try again."
+    
+    # REUSE YOUR EXISTING LOGIC HERE
+    if incoming_msg.startswith('/'):
+        command = incoming_msg[1:].lower()
+        
+        if command == 'start':
+            return """👋 *Welcome to JengaBIBOT on Telegram!*
+            
+I'm your AI marketing assistant for African businesses.
+
+*Try these commands:*
+/ideas - Generate social media content
+/strat - Create marketing strategies  
+/qstn - Get business advice
+/4wd - Analyze customer messages
+/profile - Manage your business info
+/help - See all commands
+
+Ready to grow your business? 🚀"""
+        
+        elif command == 'ideas':
+            # Use your existing product selection logic
+            session = ensure_user_session(phone_number)
+            session['awaiting_product_selection'] = True
+            return start_product_selection(phone_number, user_profile)
+        
+        elif command == 'help':
+            return """*🤖 JengaBIBOT Commands:*
+
+*Marketing:*
+/ideas - Social media content
+/strat - Marketing strategies
+/trends - Market trends (Pro)
+/competitor - Competitor analysis (Pro)
+
+*Business Tools:*
+/qstn - Business advice
+/4wd - Customer message analysis
+/profile - Business profile
+
+*Account:*
+/status - Subscription info
+/subscribe - Choose plan"""
+    
+    # Handle non-command messages using your existing logic
+    return "I'm here to help! Use /help to see available commands."
 
 # Initialize Google Trends
 pytrends = TrendReq(hl='en-US', tz=360)
@@ -2256,6 +2381,12 @@ def get_full_profile_summary(user_profile):
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
+    """Handle both WhatsApp and Telegram"""
+    # Check if it's Telegram request (JSON content type)
+    if request.headers.get('Content-Type') == 'application/json':
+        return telegram_webhook()
+    
+    # Otherwise, it's WhatsApp (your existing logic)
     print(f"🔍 WEBHOOK CALLED: {datetime.now()}")
     print(f"Raw request values: {dict(request.values)}")
     incoming_msg = request.values.get('Body', '').lower()
@@ -2921,4 +3052,5 @@ I'm here to help your business with social media marketing!"""
     return str(resp)
 
 if __name__ == '__main__':
+    setup_telegram_webhook()
     app.run(host='0.0.0.0', debug=False)
