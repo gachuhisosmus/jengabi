@@ -678,6 +678,43 @@ Ready to grow your business? 🚀"""
     # Handle non-command messages using your existing logic
     return "I'm here to help! Use /help to see available commands."
 
+@app.route('/debug-telegram', methods=['GET'])
+def debug_telegram():
+    """Debug endpoint to check Telegram setup"""
+    webhook_url = f"https://jengabi.onrender.com/telegram-webhook"
+    
+    debug_info = {
+        'telegram_token_set': bool(TELEGRAM_TOKEN),
+        'telegram_token_exists': TELEGRAM_TOKEN is not None,
+        'webhook_url': webhook_url,
+        'api_url': TELEGRAM_API_URL,
+        'timestamp': datetime.now().isoformat()
+    }
+    
+    # Test webhook status
+    if TELEGRAM_TOKEN:
+        try:
+            response = requests.get(f"{TELEGRAM_API_URL}/getWebhookInfo")
+            debug_info['webhook_status'] = response.json()
+        except Exception as e:
+            debug_info['webhook_error'] = str(e)
+    
+    return jsonify(debug_info)
+
+@app.route('/test-webhook', methods=['POST', 'GET'])
+def test_webhook():
+    """Test if webhook endpoint is reachable"""
+    print("🎯 WEBHOOK TEST CALLED")
+    print(f"Method: {request.method}")
+    print(f"Headers: {dict(request.headers)}")
+    print(f"Data: {request.get_data()}")
+    
+    return jsonify({
+        "status": "webhook_working", 
+        "method": request.method,
+        "timestamp": datetime.now().isoformat()
+    })
+
 # Initialize Google Trends
 pytrends = TrendReq(hl='en-US', tz=360)
 
