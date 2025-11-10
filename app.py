@@ -599,6 +599,28 @@ def telegram_webhook():
         print(f"❌ TELEGRAM TRACEBACK: {traceback.format_exc()}")
         return "OK"
 
+def send_telegram_message(chat_id, text):
+    """Send message to Telegram user"""
+    if not TELEGRAM_TOKEN:
+        print("❌ Cannot send Telegram message - no token")
+        return
+    
+    try:
+        response = requests.post(
+            f"{TELEGRAM_API_URL}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "Markdown"
+            }
+        )
+        if response.status_code == 200:
+            print(f"✅ Telegram message sent to {chat_id}")
+        else:
+            print(f"❌ Telegram send failed: {response.text}")
+    except Exception as e:
+        print(f"❌ Telegram send error: {e}")
+
 def process_telegram_message(chat_id, incoming_msg):
     """Process message using your existing business logic"""
     # Use Telegram ID as phone number for session management
