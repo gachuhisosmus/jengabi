@@ -31,6 +31,12 @@ CORS(app)
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}" if TELEGRAM_TOKEN else None
 
+print("🔧 INITIALIZING TELEGRAM WEBHOOK ON STARTUP...")
+if TELEGRAM_TOKEN:
+    setup_telegram_webhook()
+else:
+    print("❌ Telegram token not available - skipping webhook setup")
+
 # Root route
 @app.route('/')
 def home():
@@ -3150,12 +3156,5 @@ I'm here to help your business with social media marketing!"""
 
 if __name__ == '__main__':
     print("🚀 Starting JengaBIBOT Server...")
-    
-    # Force Telegram webhook setup on startup
-    print("🔧 Setting up Telegram webhook...")
-    if setup_telegram_webhook():
-        print("✅ Telegram integration ready!")
-    else:
-        print("❌ Telegram setup failed - check logs above")
-    
+        
     app.run(host='0.0.0.0', debug=False)
