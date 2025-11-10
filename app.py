@@ -48,27 +48,57 @@ supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_
 # ===== TELEGRAM INTEGRATION =====
 def setup_telegram_webhook():
     """Set Telegram webhook to receive messages"""
-    print("🟢 SETUP_TELEGRAM_WEBHOOK CALLED")
+    print("🎯 TELEGRAM WEBHOOK SETUP - FORCING UPDATE")
+    
     if not TELEGRAM_TOKEN:
         print("❌ Telegram token not found - Telegram integration disabled")
         return False
     
-    webhook_url = f"https://jengabi.onrender.com/telegram-webhook" 
-    print(f"🟢 TELEGRAM: Setting webhook to {webhook_url}") 
+    webhook_url = "https://jengabi.onrender.com/telegram-webhook"
+    print(f"🟢 Setting webhook to: {webhook_url}")
+    print(f"🟢 Using token: {TELEGRAM_TOKEN[:10]}...")  # First 10 chars for security
     
     try:
+        # First, delete any existing webhook
+        print("🟢 Deleting any existing webhook...")
+        delete_response = requests.post(f"{TELEGRAM_API_URL}/deleteWebhook")
+        print(f"🟢 Delete response: {delete_response.status_code} - {delete_response.text}")
+        
+        # Wait a moment
+        import time
+        time.sleep(1)
+        
+        # Set new webhook
+        print("🟢 Setting new webhook...")
         response = requests.post(
             f"{TELEGRAM_API_URL}/setWebhook",
-            json={"url": webhook_url}
+            json={
+                "url": webhook_url,
+                "max_connections": 100,
+                "allowed_updates": ["message", "edited_message"]
+            }
         )
+        
+        print(f"🟢 SetWebhook response status: {response.status_code}")
+        print(f"🟢 SetWebhook response body: {response.text}")
+        
         if response.status_code == 200:
-            print("✅ Telegram webhook set successfully")
-            return True
+            data = response.json()
+            if data.get('ok') and data.get('result'):
+                print("✅ Telegram webhook set successfully!")
+                print(f"✅ Webhook URL: {data.get('result', {}).get('url', 'Unknown')}")
+                return True
+            else:
+                print(f"❌ Telegram API error: {data}")
+                return False
         else:
-            print(f"❌ Telegram webhook failed: {response.text}")
+            print(f"❌ HTTP error: {response.status_code}")
             return False
+            
     except Exception as e:
         print(f"❌ Telegram webhook error: {e}")
+        import traceback
+        print(f"❌ Full traceback: {traceback.format_exc()}")
         return False
 
 # Initialize user sessions dictionary
@@ -3119,5 +3149,13 @@ I'm here to help your business with social media marketing!"""
     return str(resp)
 
 if __name__ == '__main__':
-    setup_telegram_webhook()
+    print("🚀 Starting JengaBIBOT Server...")
+    
+    # Force Telegram webhook setup on startup
+    print("🔧 Setting up Telegram webhook...")
+    if setup_telegram_webhook():
+        print("✅ Telegram integration ready!")
+    else:
+        print("❌ Telegram setup failed - check logs above")
+    
     app.run(host='0.0.0.0', debug=False)
