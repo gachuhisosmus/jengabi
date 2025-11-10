@@ -48,11 +48,13 @@ supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_
 # ===== TELEGRAM INTEGRATION =====
 def setup_telegram_webhook():
     """Set Telegram webhook to receive messages"""
+    print("🟢 SETUP_TELEGRAM_WEBHOOK CALLED")
     if not TELEGRAM_TOKEN:
         print("❌ Telegram token not found - Telegram integration disabled")
         return False
     
-    webhook_url = f"https://your-app.onrender.com/telegram-webhook"  # Replace with your actual URL
+    webhook_url = f"https://jengabi.onrender.com/telegram-webhook" 
+    print(f"🟢 TELEGRAM: Setting webhook to {webhook_url}") 
     
     try:
         response = requests.post(
@@ -557,39 +559,45 @@ def api_health():
 @app.route('/telegram-webhook', methods=['POST'])
 def telegram_webhook():
     """Receive messages from Telegram"""
+    print("🟢 TELEGRAM WEBHOOK CALLED - REQUEST RECEIVED")
+    
     try:
-        data = request.get_json()
-        print(f"📱 Telegram received: {json.dumps(data, indent=2)}")
+        # Log basic request info
+        print(f"📱 Telegram Headers: {dict(request.headers)}")
+        print(f"📱 Telegram Content-Type: {request.content_type}")
+        print(f"📱 Telegram Method: {request.method}")
         
+        data = request.get_json()
+        print(f"📱 Telegram Raw Data: {json.dumps(data, indent=2)}")
+        
+        if not data:
+            print("❌ TELEGRAM: No JSON data received")
+            return "OK"
+            
         if 'message' in data:
             message = data['message']
             chat_id = message['chat']['id']
             text = message.get('text', '')
             
+            print(f"📱 Telegram Message: chat_id={chat_id}, text='{text}'")
+            
             # Process using your existing logic
             response_text = process_telegram_message(chat_id, text)
             
+            print(f"📱 Telegram Response: {response_text[:100]}...")
+            
             # Send response back
             send_telegram_message(chat_id, response_text)
+            print("✅ TELEGRAM: Response sent successfully")
+        else:
+            print("⚠️ TELEGRAM: No 'message' in data")
         
         return "OK"
     except Exception as e:
-        print(f"Telegram webhook error: {e}")
+        print(f"❌ TELEGRAM WEBHOOK ERROR: {e}")
+        import traceback
+        print(f"❌ TELEGRAM TRACEBACK: {traceback.format_exc()}")
         return "OK"
-
-def send_telegram_message(chat_id, text):
-    """Send message to Telegram user"""
-    try:
-        requests.post(
-            f"{TELEGRAM_API_URL}/sendMessage",
-            json={
-                "chat_id": chat_id,
-                "text": text,
-                "parse_mode": "Markdown"
-            }
-        )
-    except Exception as e:
-        print(f"Telegram send error: {e}")
 
 def process_telegram_message(chat_id, incoming_msg):
     """Process message using your existing business logic"""
