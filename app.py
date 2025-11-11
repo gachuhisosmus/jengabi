@@ -921,19 +921,26 @@ def process_telegram_message(chat_id, incoming_msg):
     if not user_profile:
         return "Sorry, I'm having technical issues. Please try again."
     
+    session = ensure_user_session(phone_number)
+    
     # ✅ IDENTICAL PROFILE COMPLETION FLOW AS WHATSAPP
     if not user_profile.get('profile_complete'):
-        # Use the EXACT SAME onboarding function as WhatsApp
-        onboarding_response = start_business_onboarding(phone_number, user_profile)
-        
-        # Set session state (SAME as WhatsApp)
-        session = ensure_user_session(phone_number)
-        session['onboarding'] = True
-        session['onboarding_step'] = 0
-        session['business_data'] = {}
-        
-        return onboarding_response
-    
+        # Check if user is already in onboarding
+        if session.get('onboarding'):
+            # ✅ FIX: Handle onboarding response (SAME as WhatsApp)
+            onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
+            return response_message
+        else:
+            # Start new onboarding (SAME as WhatsApp)
+            onboarding_response = start_business_onboarding(phone_number, user_profile)
+
+            # Set session state (SAME as WhatsApp)
+            session['onboarding'] = True
+            session['onboarding_step'] = 0
+            session['business_data'] = {}
+
+            return onboarding_response
+                  
     # ✅ IDENTICAL SESSION STATE MANAGEMENT AS WHATSAPP
     session = ensure_user_session(phone_number)
     
