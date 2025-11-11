@@ -110,6 +110,51 @@ if TELEGRAM_TOKEN:
 else:
     print("❌ Telegram token not available - skipping webhook setup")
 
+# ===== SMART ANONYMIZATION =====
+def anonymize_for_command(command_type, user_profile, additional_data=None):
+    """
+    Command-specific anonymization based on our agreed strategy
+    ALWAYS REMOVE: Business names, phone numbers, exact addresses
+    ALWAYS KEEP: Products, business types, location context, African specifics
+    """
+    # Create a safe copy to avoid modifying original
+    safe_data = user_profile.copy() if user_profile else {}
+    
+    # ALWAYS REMOVE direct identifiers for ALL commands
+    safe_data.pop('business_name', None)
+    safe_data.pop('business_phone', None)
+    safe_data.pop('email', None)
+    
+    # Command-specific location handling
+    if safe_data.get('business_location'):
+        location = safe_data['business_location']
+        
+        if command_type in ['ideas', 'strat', 'qstn', '4wd']:
+            # For content generation: keep city but remove specific area
+            if ',' in location:
+                safe_data['business_location'] = location.split(',')[-1].strip()
+            elif 'westlands' in location.lower() or 'karen' in location.lower() or 'cbd' in location.lower():
+                safe_data['business_location'] = 'Nairobi'
+                
+        elif command_type in ['trends', 'competitor']:
+            # For trends/competitor: generalize to country level
+            safe_data['business_location'] = 'Kenya'
+    
+    # Handle additional data (like customer messages in 4wd)
+    safe_additional_data = additional_data
+    if additional_data and command_type == '4wd':
+        try:
+            from anonymization import anonymizer
+            safe_additional_data = anonymizer.remove_sensitive_terms(additional_data)
+        except ImportError as e:
+            print(f"❌ Anonymization import error, using fallback: {e}")
+            # Fallback: remove phone numbers/emails from customer messages
+            import re
+            safe_additional_data = re.sub(r'\+\d{1,3}[-.\s]?\d{1,14}', '[PHONE]', additional_data)
+            safe_additional_data = re.sub(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', '[EMAIL]', additional_data)
+    
+    return safe_data, safe_additional_data    
+
 # Initialize user sessions dictionary
 user_sessions = {}
 
@@ -676,7 +721,7 @@ def process_telegram_message(chat_id, incoming_msg):
         command = incoming_msg[1:].lower()
         
         if command == 'start':
-            return """👋 *Welcome to JengaBIBOT on Telegram!*
+            return """👋 *Welcome to JengaBI on Telegram!*
             
 I'm your AI marketing assistant for African businesses.
 
@@ -1280,7 +1325,7 @@ You can also reply 'cancel' to stop onboarding."""
         
         business_name = business_data.get('business_name', 'your business')
         return True, f"""
-✅ PROFILE COMPLETE! Welcome to JengaBIBOT - your business marketing assistant! 
+✅ PROFILE COMPLETE! Welcome to JengaBI - your business marketing assistant! 
 
 Now I can create personalized social media marketing content specifically for *{business_name}*!
 
@@ -1432,14 +1477,20 @@ def generate_realistic_ideas(user_profile, products, output_type='ideas', num_id
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
-        # Get business context
+        # ANONYMIZE profile but KEEP original products
+        safe_profile, _ = anonymize_for_command('ideas', user_profile)
+        
+        # Get business context from SAFE data only
         business_context = ""
-        if user_profile.get('business_name'):
-            business_context = f"for {user_profile['business_name']}"
-        if user_profile.get('business_type'):
-            business_context += f", a {user_profile['business_type']}"
-        if user_profile.get('business_location'):
-            business_context += f" located in {user_profile['business_location']}"
+        if safe_profile.get('business_name'):
+            business_context = f"for {safe_profile['business_name']}"
+        if safe_profile.get('business_type'):
+            business_context += f", a {safe_profile['business_type']}"
+        if safe_profile.get('business_location'):
+            business_context += f" located in {safe_profile['business_location']}"
+        
+        # Use ORIGINAL products (we want to keep "Nyama Choma", "Ugali", etc.)
+        products_text = ', '.join(products)
         
         # Get enhanced data for Pro users
         enhanced_context = ""
@@ -1468,7 +1519,7 @@ def generate_realistic_ideas(user_profile, products, output_type='ideas', num_id
             # TACTICAL: Quick, actionable content ideas
             prompt = f"""
             Act as a social media content creator for African small businesses.
-            Generate {num_ideas} SPECIFIC, READY-TO-USE social media post ideas {business_context} for {', '.join(products)}.
+            Generate {num_ideas} SPECIFIC, READY-TO-USE social media post ideas {business_context} for {products_text}.
             
             FOCUS ON:
             - Immediate content creation
@@ -1722,19 +1773,21 @@ def truncate_message(content, max_length=1500):
 # ===== NEW QSTN COMMAND FUNCTION =====
 
 def handle_qstn_command(phone_number, user_profile, question):
-    """Handle business-specific Q&A based on business type"""
+    """Handle business-specific Q&A with anonymization"""
     try:
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
-        # Build detailed business context for personalized answers
+        # ANONYMIZE before sending to OpenAI
+        safe_profile, safe_question = anonymize_for_command('qstn', user_profile, question)
+        
+        # Build business context from SAFE data only
         business_context = f"""
         Business Details:
-        - Business Name: {user_profile.get('business_name', 'Not specified')}
-        - Business Type: {user_profile.get('business_type', 'Not specified')}
-        - Location: {user_profile.get('business_location', 'Kenya')}
-        - Products/Services: {', '.join(user_profile.get('business_products', []))}
-        - Marketing Goals: {user_profile.get('business_marketing_goals', 'Not specified')}
+        - Business Type: {safe_profile.get('business_type', 'Not specified')}
+        - Location: {safe_profile.get('business_location', 'Kenya')}
+        - Products/Services: {', '.join(safe_profile.get('business_products', []))}
+        - Marketing Goals: {safe_profile.get('business_marketing_goals', 'Not specified')}
         """
         
         prompt = f"""
@@ -1742,27 +1795,22 @@ def handle_qstn_command(phone_number, user_profile, question):
         
         {business_context}
         
-        USER QUESTION: "{question}"
+        USER QUESTION: "{safe_question}"
         
         CRITICAL INSTRUCTIONS:
         1. FIRST analyze if this is a GENERAL KNOWLEDGE question vs BUSINESS question
         2. If it's GENERAL KNOWLEDGE (math, facts, definitions): Give direct, factual answers
-        3. If it's BUSINESS-RELATED: Provide specific, actionable advice for THIS business
+        3. If it's BUSINESS-RELATED: Provide specific, actionable advice for THIS business context
         4. ALWAYS consider the Kenyan/African business context
         5. Be CONCISE and DIRECT - no generic templates
         6. If the question is unclear, ask for clarification
-        
-        EXAMPLES:
-        - "What is 1+1?" → "1+1 = 2" (direct answer)
-        - "How to price my products?" → "For your {user_profile.get('business_type')} in {user_profile.get('business_location')}, consider..."
-        - "Best marketing strategy?" → "Based on your {user_profile.get('business_type')}, focus on..."
         
         Provide your answer in this format:
         🎯 DIRECT ANSWER: [Brief direct answer if factual]
         💡 BUSINESS CONTEXT: [If business-related, specific advice]
         🚀 ACTION STEPS: [If applicable, 1-3 concrete steps]
         
-        Now answer: "{question}"
+        Now answer: "{safe_question}"
         """
         
         response = client.chat.completions.create(
@@ -1771,14 +1819,15 @@ def handle_qstn_command(phone_number, user_profile, question):
                 {"role": "system", "content": "You are a practical, no-nonsense business advisor for African SMEs. Answer directly and specifically. Never use generic template responses."},
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=400,  # Shorter, more focused responses
+            max_tokens=400,
             temperature=0.7,
         )
         
         answer = response.choices[0].message.content.strip()
         
-        # Format the response
-        formatted_response = f"""*🤔 BUSINESS Q&A FOR {user_profile.get('business_name', 'YOUR BUSINESS').upper()}*
+        # Format response with ORIGINAL business name for personalization
+        original_business_name = user_profile.get('business_name', 'Your Business')
+        formatted_response = f"""*🤔 BUSINESS Q&A FOR {original_business_name.upper()}*
 
 *Your Question:* {question}
 
@@ -1795,18 +1844,20 @@ def handle_qstn_command(phone_number, user_profile, question):
 # ===== NEW 4WD COMMAND FUNCTION =====
 
 def handle_4wd_command(phone_number, user_profile, customer_message):
-    """Handle customer message analysis for business insights"""
+    """Handle customer message analysis with anonymization"""
     try:
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
-        # Build business context for personalized analysis
+        # ANONYMIZE customer message and profile
+        safe_profile, safe_message = anonymize_for_command('4wd', user_profile, customer_message)
+        
+        # Build business context from SAFE data only
         business_context = f"""
         Business Context:
-        - Name: {user_profile.get('business_name', 'Not specified')}
-        - Type: {user_profile.get('business_type', 'Not specified')}
-        - Location: {user_profile.get('business_location', 'Kenya')}
-        - Products/Services: {', '.join(user_profile.get('business_products', []))}
+        - Type: {safe_profile.get('business_type', 'Not specified')}
+        - Location: {safe_profile.get('business_location', 'Kenya')}
+        - Products/Services: {', '.join(safe_profile.get('business_products', []))}
         """
         
         prompt = f"""
@@ -1815,7 +1866,7 @@ def handle_4wd_command(phone_number, user_profile, customer_message):
         {business_context}
         
         Customer Message to Analyze:
-        "{customer_message}"
+        "{safe_message}"
         
         Provide a comprehensive analysis with:
         
@@ -1854,8 +1905,9 @@ def handle_4wd_command(phone_number, user_profile, customer_message):
         
         analysis = response.choices[0].message.content.strip()
         
-        # Format the response with bold text
-        formatted_response = f"""*📞 CUSTOMER MESSAGE ANALYSIS FOR {user_profile.get('business_name', 'YOUR BUSINESS').upper()}*
+        # Format response with ORIGINAL business name for personalization
+        original_business_name = user_profile.get('business_name', 'Your Business')
+        formatted_response = f"""*📞 CUSTOMER MESSAGE ANALYSIS FOR {original_business_name.upper()}*
 
 *Customer Message:*
 "{customer_message}"
@@ -1882,10 +1934,15 @@ def handle_trends_command(phone_number, user_profile):
     if not plan_info or plan_info.get('plan_type') != 'pro':
         return "🔒 Real-time trends are exclusive to Pro plan users. Reply 'subscribe' to upgrade!"
     
-    # Generate real-time trend analysis
-    trend_report = generate_trend_analysis(user_profile)
+    # ANONYMIZE for trends analysis
+    safe_profile, _ = anonymize_for_command('trends', user_profile)
     
-    return f"""📊 REAL-TIME TREND ANALYSIS for {user_profile.get('business_name', 'Your Business')}
+    # Generate real-time trend analysis using safe_profile
+    trend_report = generate_trend_analysis(safe_profile)
+    
+    # Format response with ORIGINAL business name
+    original_business_name = user_profile.get('business_name', 'Your Business')
+    return f"""📊 REAL-TIME TREND ANALYSIS for {original_business_name}
 
 {trend_report}
 
@@ -1900,10 +1957,13 @@ def handle_competitor_command(phone_number, user_profile):
     if not plan_info or plan_info.get('plan_type') != 'pro':
         return "🔒 Competitor analysis is exclusive to Pro plan users. Reply 'subscribe' to upgrade!"
     
-    # Generate competitor insights
+    # ANONYMIZE for competitor analysis
+    safe_profile, _ = anonymize_for_command('competitor', user_profile)
+    
+    # Generate competitor insights using safe_profile
     competitor_data = get_competitor_insights(
-        user_profile.get('business_type'),
-        user_profile.get('business_location', 'Kenya')
+        safe_profile.get('business_type'),
+        safe_profile.get('business_location', 'Kenya')
     )
     
     if competitor_data:
@@ -2558,7 +2618,7 @@ Let's complete your profile setup with a few quick questions. Reply with any mes
         # For ANY other command/message when profile is incomplete, start onboarding
         print(f"🚨 NEW USER: Starting onboarding for message: '{incoming_msg}'")
         onboarding_message = start_business_onboarding(phone_number, user_profile)
-        resp.message(f"""👋 Welcome to JengaBIBOT!
+        resp.message(f"""👋 Welcome to JengaBI!
 
 I see you're new here! Let me help you set up your business profile so I can create personalized marketing content for you.
 
