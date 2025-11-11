@@ -16,6 +16,8 @@ from pytrends.request import TrendReq
 from flask_cors import CORS
 import requests
 import json
+import base64
+import datetime
 
 
 # Load environment variables
@@ -30,6 +32,13 @@ CORS(app)
 # Telegram Configuration
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}" if TELEGRAM_TOKEN else None
+
+# ===== MPESA CONFIGURATION =====
+MPESA_CONSUMER_KEY = os.getenv("MPESA_CONSUMER_KEY")
+MPESA_CONSUMER_SECRET = os.getenv("MPESA_CONSUMER_SECRET")
+MPESA_PASSKEY = os.getenv("MPESA_PASSKEY", "placeholder_passkey")
+MPESA_SHORTCODE = os.getenv("MPESA_SHORTCODE")
+MPESA_CALLBACK_URL = os.getenv("MPESA_CALLBACK_URL", "https://jengabi.onrender.com/mpesa-callback")
 
 # Root route
 @app.route('/')
@@ -109,6 +118,155 @@ if TELEGRAM_TOKEN:
     setup_telegram_webhook()
 else:
     print("❌ Telegram token not available - skipping webhook setup")
+
+# ===== MPESA INTEGRATION FUNCTIONS =====
+def get_mpesa_access_token():
+    """Get M-Pesa API access token"""
+    try:
+        if not MPESA_CONSUMER_KEY or not MPESA_CONSUMER_SECRET:
+            return None
+            
+        url = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
+        response = requests.get(
+            url,
+            auth=(MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET),
+            timeout=30
+        )
+        if response.status_code == 200:
+            return response.json()['access_token']
+        else:
+            print(f"❌ M-Pesa token error: {response.text}")
+            return None
+    except Exception as e:
+        print(f"❌ M-Pesa token exception: {e}")
+        return None
+
+def initiate_mpesa_payment(phone_number, amount, plan_type, account_reference):
+    """Initiate M-Pesa STK Push payment"""
+    try:
+        # Check if we have real credentials
+        if MPESA_PASSKEY == "placeholder_passkey" or not MPESA_PASSKEY:
+            return None, "manual"
+        
+        access_token = get_mpesa_access_token()
+        if not access_token:
+            return None, "Failed to get M-Pesa access token"
+        
+        # Format phone number (2547...)
+        if phone_number.startswith('0'):
+            phone_number = '254' + phone_number[1:]
+        elif phone_number.startswith('+254'):
+            phone_number = phone_number[1:]
+        elif phone_number.startswith('254'):
+            phone_number = phone_number
+        else:
+            return None, "Invalid phone number format"
+        
+        # M-Pesa API parameters
+        timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+        password = base64.b64encode(f"{MPESA_SHORTCODE}{MPESA_PASSKEY}{timestamp}".encode()).decode()
+        
+        payload = {
+            "BusinessShortCode": MPESA_SHORTCODE,
+            "Password": password,
+            "Timestamp": timestamp,
+            "TransactionType": "CustomerPayBillOnline",
+            "Amount": amount,
+            "PartyA": phone_number,
+            "PartyB": MPESA_SHORTCODE,
+            "PhoneNumber": phone_number,
+            "CallBackURL": MPESA_CALLBACK_URL,
+            "AccountReference": account_reference,
+            "TransactionDesc": f"JengaBI {plan_type.capitalize()} Plan"
+        }
+        
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        
+        url = "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
+        
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ResponseCode') == '0':
+                return data['CheckoutRequestID'], "Payment initiated successfully"
+            else:
+                return None, f"M-Pesa error: {data.get('ResponseDescription', 'Unknown error')}"
+        else:
+            return None, f"HTTP error: {response.status_code} - {response.text}"
+            
+    except Exception as e:
+        print(f"❌ M-Pesa payment initiation error: {e}")
+        return None, f"Payment initiation failed: {str(e)}"
+
+def activate_subscription(phone_number, plan_type, mpesa_receipt=None, amount=None):
+    """Activate user subscription after successful payment"""
+    try:
+        # Find user profile
+        response = supabase.table('profiles').select('*').eq('phone_number', phone_number).execute()
+        if not response.data:
+            print(f"❌ User not found for phone: {phone_number}")
+            return False
+        
+        user_profile = response.data[0]
+        profile_id = user_profile['id']
+        
+        # Create or update subscription
+        subscription_data = {
+            'profile_id': profile_id,
+            'plan_type': plan_type,
+            'is_active': True,
+            'payment_status': 'completed',
+            'mpesa_receipt_number': mpesa_receipt,
+            'amount_paid': amount,
+            'start_date': datetime.datetime.now().isoformat(),
+            'end_date': (datetime.datetime.now() + datetime.timedelta(days=30)).isoformat()
+        }
+        
+        # Check if subscription exists
+        existing_sub = supabase.table('subscriptions').select('*').eq('profile_id', profile_id).execute()
+        if existing_sub.data:
+            # Update existing subscription
+            supabase.table('subscriptions').update(subscription_data).eq('profile_id', profile_id).execute()
+        else:
+            # Create new subscription
+            supabase.table('subscriptions').insert(subscription_data).execute()
+        
+        print(f"✅ SUBSCRIPTION ACTIVATED: {plan_type} plan for {phone_number}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Subscription activation error: {e}")
+        return False
+
+def parse_manual_mpesa_confirmation(message):
+    """Parse forwarded M-Pesa confirmation messages"""
+    try:
+        # Extract amount
+        import re
+        amount_match = re.search(r'KSh\s*([\d,]+\.?\d*)', message)
+        amount = float(amount_match.group(1).replace(',', '')) if amount_match else None
+        
+        # Extract receipt number (typically like LNM6XJ9R9G)
+        receipt_match = re.search(r'([A-Z0-9]{10,})', message)
+        receipt = receipt_match.group(1) if receipt_match else None
+        
+        # Extract phone number from account reference
+        phone_match = re.search(r'account\s*(\d+)', message)
+        phone = phone_match.group(1) if phone_match else None
+        
+        return {
+            'amount': amount,
+            'receipt': receipt,
+            'phone': phone,
+            'is_valid': bool(amount and receipt)
+        }
+    except Exception as e:
+        print(f"❌ M-Pesa confirmation parsing error: {e}")
+        return {'is_valid': False}    
 
 # ===== SMART ANONYMIZATION =====
 def anonymize_for_command(command_type, user_profile, additional_data=None):
@@ -630,6 +788,54 @@ def sales_advice():
             'success': False, 
             'error': f'Sales advice service temporarily unavailable: {str(e)}'
         }), 500
+
+# ===== MPESA CALLBACK ROUTE =====
+@app.route('/mpesa-callback', methods=['POST'])
+def mpesa_callback():
+    """Handle M-Pesa payment confirmation"""
+    try:
+        data = request.get_json()
+        print(f"📱 MPESA CALLBACK RECEIVED: {json.dumps(data, indent=2)}")
+        
+        # Extract payment details
+        callback_data = data.get('Body', {}).get('stkCallback', {})
+        result_code = callback_data.get('ResultCode')
+        
+        if result_code == 0:
+            # Payment successful
+            callback_metadata = callback_data.get('CallbackMetadata', {}).get('Item', [])
+            payment_data = {}
+            for item in callback_metadata:
+                payment_data[item.get('Name')] = item.get('Value')
+            
+            amount = payment_data.get('Amount')
+            mpesa_receipt = payment_data.get('MpesaReceiptNumber')
+            phone_number = payment_data.get('PhoneNumber')
+            account_reference = payment_data.get('AccountReference', '')
+            
+            print(f"✅ PAYMENT SUCCESS: {mpesa_receipt} - KSh {amount} from {phone_number}")
+            
+            # Extract plan type from account reference
+            plan_type = "basic"
+            if "growth" in account_reference.lower():
+                plan_type = "growth"
+            elif "pro" in account_reference.lower():
+                plan_type = "pro"
+            
+            # Format phone number for database lookup
+            formatted_phone = f"whatsapp:+{phone_number}" if not phone_number.startswith('whatsapp:') else phone_number
+            
+            # Activate subscription
+            activate_subscription(formatted_phone, plan_type, mpesa_receipt, amount)
+            
+        else:
+            print(f"❌ PAYMENT FAILED: {callback_data.get('ResultDesc')}")
+        
+        return jsonify({"ResultCode": 0, "ResultDesc": "Success"})
+        
+    except Exception as e:
+        print(f"❌ MPESA CALLBACK ERROR: {e}")
+        return jsonify({"ResultCode": 1, "ResultDesc": "Failed"})
 
 @app.route('/api/health', methods=['GET'])
 def api_health():
@@ -3078,38 +3284,130 @@ Paste or forward the customer message now:""")
         return str(resp)
 
     elif 'subscribe' in incoming_msg:
-        plan_selection_message = """*Great! Choose your monthly social media marketing plan:*
+        if not user_profile.get('profile_complete'):
+            resp.message("Please complete your business profile first using the 'profile' command.")
+            return str(resp)
+    
+        plan_selection_message = """*Choose your monthly plan:*
 
 *🎯 BASIC - KSh 130/month*
-• 5 social media post ideas per week
-• Business Q&A (*'qstn'* command)
-• Customer message analysis (*'4wd'* command)
-• Perfect for getting started
+• 5 social media ideas per week
+• Business Q&A (*'qstn'*)
+• Customer message analysis (*'4wd'*)
 
 *🚀 GROWTH - KSh 249/month*  
-• 15 ideas + weekly content strategy
-• Marketing strategies (*'strat'* command)
-• Business Q&A (*'qstn'* command)
-• Customer message analysis (*'4wd'* command)
-• Ideal for growing businesses
+• 15 ideas + marketing strategies (*'strat'*)
+• All Basic features
 
 *💎 PRO - KSh 599/month*
-• Unlimited ideas + full marketing strategies
-• REAL-TIME Google Trends analysis (*'trends'*)
-• Competitor intelligence reports (*'competitor'*)
-• Business Q&A (*'qstn'* command)
-• Customer message analysis (*'4wd'* command)
-• Weekly market updates (Sun, Wed, Fri)
-• AI-powered market insights
+• Unlimited ideas + advanced strategies
+• Real-time trends (*'trends'*)
+• Competitor analysis (*'competitor'*)
+• All Growth features
 
-Reply with *'Basic'*, *'Growth'*, or *'Pro'*."""
+Reply with *'Basic'*, *'Growth'*, or *'Pro'* to pay via M-Pesa."""
         
-        if phone_number not in user_sessions:
-            user_sessions[phone_number] = {}
-        user_sessions[phone_number]['state'] = 'awaiting_plan_selection'
+        session['awaiting_plan_selection'] = True
         resp.message(plan_selection_message)
-        return str(resp)
+        return str(resp)     
     
+        # ===== PLAN SELECTION HANDLING =====
+    if session.get('awaiting_plan_selection'):
+        plan_choice = incoming_msg.strip().lower()
+        if plan_choice in ['basic', 'growth', 'pro']:
+            session['awaiting_plan_selection'] = False
+            
+            plan_data = PLANS[plan_choice]
+            amount = plan_data['price']
+            
+            # Initiate M-Pesa payment
+            checkout_id, message = initiate_mpesa_payment(
+                phone_number, 
+                amount, 
+                plan_choice,
+                f"JengaBI{plan_choice.capitalize()}"
+            )
+            
+            if message == "manual":
+                # Manual payment instructions
+                clean_phone = phone_number.replace('whatsapp:+', '').replace('telegram:', '')
+                resp.message(f"""💳 MANUAL PAYMENT INSTRUCTIONS:
+
+To activate your {plan_choice.upper()} Plan:
+
+1. 🏦 Go to M-Pesa
+2. 📤 Select "Pay Bill" 
+3. 🏢 Business No: *{MPESA_SHORTCODE}*
+4. 📝 Account No: *{clean_phone}*
+5. 💰 Amount: *KSh {amount}*
+6. ✅ Enter your M-Pesa PIN
+
+After payment, *forward the confirmation message* to me for automatic activation.
+
+*Plan Benefits:*
+{plan_data['description']}""")
+            
+            elif checkout_id:
+                resp.message(f"""💳 PAYMENT INITIATED
+
+{message}
+
+📱 Check your phone for M-Pesa prompt to complete payment.
+
+Once payment is confirmed, your {plan_choice.upper()} plan will be activated automatically.""")
+            
+            else:
+                clean_phone = phone_number.replace('whatsapp:+', '').replace('telegram:', '')
+                resp.message(f"""❌ AUTOMATIC PAYMENT FAILED
+
+{message}
+
+💳 *MANUAL PAYMENT INSTRUCTIONS:*
+
+1. Pay Bill: *{MPESA_SHORTCODE}*
+2. Account: *{clean_phone}*  
+3. Amount: *KSh {amount}*
+
+Forward the confirmation message to me.""")
+        
+        else:
+            resp.message("Please reply with 'Basic', 'Growth', or 'Pro' to continue.")
+        
+        return str(resp)
+
+    # ===== MANUAL MPESA CONFIRMATION HANDLING =====
+    # Check if message looks like M-Pesa confirmation
+    if any(keyword in incoming_msg.lower() for keyword in ['ksh', 'sent to', 'mpesa', 'transaction', 'lnm']):
+        parsed_payment = parse_manual_mpesa_confirmation(incoming_msg)
+        if parsed_payment['is_valid']:
+            amount = parsed_payment['amount']
+            receipt = parsed_payment['receipt']
+            
+            # Determine plan based on amount
+            plan_type = "basic"
+            if amount >= 500:
+                plan_type = "pro"
+            elif amount >= 200:
+                plan_type = "growth"
+            
+            # Activate subscription
+            if activate_subscription(phone_number, plan_type, receipt, amount):
+                plan_data = PLANS[plan_type]
+                resp.message(f"""✅ PAYMENT CONFIRMED!
+
+Your {plan_type.upper()} Plan has been activated! 🎉
+
+💰 Amount: KSh {amount}
+📱 Receipt: {receipt}
+
+*Plan Benefits:*
+{plan_data['description']}
+
+You can now use all features. Reply 'ideas' to get started!""")
+            else:
+                resp.message("❌ Failed to activate subscription. Please contact support.")
+            return str(resp)
+
     elif 'profile' in incoming_msg:
         # Start profile management
         profile_message = start_profile_management(phone_number, user_profile)
