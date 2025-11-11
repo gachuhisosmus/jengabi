@@ -8,7 +8,6 @@ import json
 import schedule
 import time
 import threading
-from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from supabase import create_client, Client
 import pytrends
@@ -17,7 +16,7 @@ from flask_cors import CORS
 import requests
 import json
 import base64
-import datetime
+from datetime import datetime, timedelta
 
 
 # Load environment variables
