@@ -847,17 +847,11 @@ def api_health():
 # ===== TELEGRAM WEBHOOK ROUTES =====
 @app.route('/telegram-webhook', methods=['POST'])
 def telegram_webhook():
-    """Receive messages from Telegram"""
+    """Receive messages from Telegram - FIXED VERSION"""
     print("🟢 TELEGRAM WEBHOOK CALLED - REQUEST RECEIVED")
     
     try:
-        # Log basic request info
-        print(f"📱 Telegram Headers: {dict(request.headers)}")
-        print(f"📱 Telegram Content-Type: {request.content_type}")
-        print(f"📱 Telegram Method: {request.method}")
-        
         data = request.get_json()
-        print(f"📱 Telegram Raw Data: {json.dumps(data, indent=2)}")
         
         if not data:
             print("❌ TELEGRAM: No JSON data received")
@@ -872,8 +866,6 @@ def telegram_webhook():
             
             # Process using your existing logic
             response_text = process_telegram_message(chat_id, text)
-            
-            print(f"📱 Telegram Response: {response_text[:100]}...")
             
             # Send response back
             send_telegram_message(chat_id, response_text)
@@ -923,22 +915,27 @@ def process_telegram_message(chat_id, incoming_msg):
     
     session = ensure_user_session(phone_number)
     
-    # ✅ IDENTICAL PROFILE COMPLETION FLOW AS WHATSAPP
+        # ✅ ENHANCED PROFILE COMPLETION FLOW WITH DATABASE VERIFICATION
+    print(f"🔍 TELEGRAM DEBUG: User profile complete: {user_profile.get('profile_complete')}")
+    print(f"🔍 TELEGRAM DEBUG: Session state: onboarding={session.get('onboarding')}")
+
     if not user_profile.get('profile_complete'):
         # Check if user is already in onboarding
         if session.get('onboarding'):
-            # ✅ FIX: Handle onboarding response (SAME as WhatsApp)
             onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
+            
+            # ✅ CRITICAL: Refresh user profile after onboarding completion
+            if onboarding_complete:
+                user_profile = get_or_create_profile(phone_number)  # Refresh from database
+                print(f"🔄 PROFILE REFRESHED: Complete={user_profile.get('profile_complete')}")
+            
             return response_message
         else:
-            # Start new onboarding (SAME as WhatsApp)
+            # Start new onboarding
             onboarding_response = start_business_onboarding(phone_number, user_profile)
-
-            # Set session state (SAME as WhatsApp)
             session['onboarding'] = True
             session['onboarding_step'] = 0
             session['business_data'] = {}
-
             return onboarding_response
                   
     # ✅ IDENTICAL SESSION STATE MANAGEMENT AS WHATSAPP
@@ -1744,6 +1741,20 @@ def get_or_create_profile(phone_number):
     except Exception as e:
         print(f"Database error in get_or_create_profile: {e}")
         return None
+    
+def verify_profile_completion(phone_number):
+    """Force refresh and verify profile completion status from database"""
+    try:
+        # Force database refresh
+        response = supabase.table('profiles').select('*').eq('phone_number', phone_number).execute()
+        if response.data:
+            user_data = response.data[0]
+            print(f"🔍 PROFILE VERIFICATION: {user_data.get('business_name')} - Complete: {user_data.get('profile_complete')}")
+            return user_data.get('profile_complete', False)
+        return False
+    except Exception as e:
+        print(f"❌ Profile verification error: {e}")
+        return False    
 
 def start_business_onboarding(phone_number, user_profile):
     """Start the business profile collection process"""
@@ -1800,20 +1811,25 @@ You can also reply 'cancel' to stop onboarding."""
         else:
             business_data[previous_field] = incoming_msg
     
-    # Check if onboarding complete
+        # Check if onboarding complete
     if step >= len(steps):
-        # Save all business data to database
+        # Save all business data to database - WITH ERROR HANDLING
         try:
-            supabase.table('profiles').update({
+            update_result = supabase.table('profiles').update({
                 **business_data,
-                'profile_complete': True
+                'profile_complete': True,
+                'updated_at': datetime.now().isoformat()
             }).eq('id', user_profile['id']).execute()
+            
+            print(f"✅ PROFILE SAVED TO DATABASE: {update_result}")
+            
         except Exception as e:
-            print(f"Error saving business data: {e}")
+            print(f"❌ ERROR saving business data: {e}")
+            return False, "❌ Error saving your profile. Please try again."
         
-        # Clear onboarding session
-        user_sessions[phone_number]['onboarding'] = False
-        user_sessions[phone_number]['onboarding_step'] = 0
+        # Clear onboarding session - ONLY IF SAVE SUCCESSFUL
+        session['onboarding'] = False
+        session['onboarding_step'] = 0
         
         business_name = business_data.get('business_name', 'your business')
         return True, f"""
