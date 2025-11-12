@@ -2804,12 +2804,14 @@ Or reply 'skip' to use default options.
 # ===== PROFILE MANAGEMENT FUNCTIONS =====
 
 def start_profile_management(phone_number, user_profile):
-    """Start profile management menu"""
-    if phone_number not in user_sessions:
-        user_sessions[phone_number] = {}
+    """Start profile management menu - WITH DEBUG LOGGING"""
+    print(f"🔍 START_PROFILE_MANAGEMENT: Called for {phone_number}")
     
-    user_sessions[phone_number]['managing_profile'] = True
-    user_sessions[phone_number]['profile_step'] = 'menu'
+    session = ensure_user_session(phone_number)
+    session['managing_profile'] = True
+    session['profile_step'] = 'menu'
+    
+    print(f"🔍 START_PROFILE_MANAGEMENT: Session set - managing_profile={session.get('managing_profile')}, profile_step={session.get('profile_step')}")
     
     profile_summary = f"""
 📊 *YOUR CURRENT PROFILE:*
@@ -2839,8 +2841,13 @@ Reply with a number (1-9):
     return profile_summary
 
 def handle_profile_management(phone_number, incoming_msg, user_profile):
-    """Handle profile management steps"""
-    step = user_sessions[phone_number].get('profile_step', 'menu')
+    """Handle profile management steps - WITH SESSION DEBUG"""
+    session = ensure_user_session(phone_number)
+    print(f"🔧 PROFILE MGMT DEBUG: Starting - step='{session.get('profile_step')}', incoming_msg='{incoming_msg}'")
+    print(f"🔧 PROFILE MGMT DEBUG: Full session = {session}")
+    
+    step = session.get('profile_step', 'menu')
+    # ... rest of existing code ...
     print(f"🔧 PROFILE MGMT DEBUG: Starting - step='{step}', incoming_msg='{incoming_msg}'")
     print(f"🔧 PROFILE MGMT DEBUG: Full session = {user_sessions[phone_number]}")
     
