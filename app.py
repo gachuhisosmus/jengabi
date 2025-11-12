@@ -940,7 +940,59 @@ def process_telegram_message(chat_id, incoming_msg):
                   
     # ✅ IDENTICAL SESSION STATE MANAGEMENT AS WHATSAPP
     session = ensure_user_session(phone_number)
+
+        # ✅ IDENTICAL SESSION STATE MANAGEMENT AS WHATSAPP
+    session = ensure_user_session(phone_number)
     
+    # ✅ CRITICAL: ADD COMMAND PROCESSING FOR REGULAR MESSAGES
+    print(f"🔍 TELEGRAM COMMAND DEBUG: Processing message '{incoming_msg}' for complete profile")
+    
+    # Handle regular text messages (not commands starting with /)
+    if not incoming_msg.startswith('/'):
+        print(f"🔍 TELEGRAM: Processing regular message '{incoming_msg}'")
+        
+        # Handle session states first
+        if session.get('awaiting_qstn'):
+            session['awaiting_qstn'] = False
+            question = incoming_msg.strip()
+            if not question or len(question) < 5:
+                return "Please ask a specific business question (at least 5 characters). Use /qstn to try again."
+            
+            qstn_response = handle_qstn_command(phone_number, user_profile, question)
+            return qstn_response
+        
+        elif session.get('awaiting_4wd'):
+            session['awaiting_4wd'] = False
+            customer_message = incoming_msg.strip()
+            if not customer_message or len(customer_message) < 5:
+                return "Please provide a customer message to analyze (at least 5 characters). Use /4wd to try again."
+            
+            analysis_response = handle_4wd_command(phone_number, user_profile, customer_message)
+            return analysis_response
+        
+        elif session.get('awaiting_product_selection'):
+            selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
+            if error_message:
+                return error_message
+            elif selected_products:
+                session['awaiting_product_selection'] = False
+                output_type = session.get('output_type', 'ideas')
+                
+                if 'output_type' in session:
+                    del session['output_type']
+                
+                ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
+                headers = {
+                    'ideas': "🎯 SOCIAL MEDIA CONTENT IDEAS",
+                    'pro_ideas': "🚀 PREMIUM VIRAL CONTENT CONCEPTS", 
+                    'strategies': "📊 COMPREHENSIVE MARKETING STRATEGY"
+                }
+                header = headers.get(output_type, "🎯 MARKETING CONTENT")
+                return f"{header} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
+        
+        # Default intelligent response for regular messages
+        return get_intelligent_response(incoming_msg, user_profile)
+        
     # Handle onboarding responses (SAME as WhatsApp)
     if session.get('onboarding'):
         onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
