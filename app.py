@@ -881,10 +881,17 @@ def telegram_webhook():
         return "OK"
 
 def send_telegram_message(chat_id, text):
-    """Send message to Telegram user"""
+    """Send message to Telegram user - WITH EMPTY RESPONSE PROTECTION"""
     if not TELEGRAM_TOKEN:
         print("❌ Cannot send Telegram message - no token")
         return
+    
+    # ✅ CRITICAL: Prevent empty responses
+    if not text or len(text.strip()) == 0:
+        print(f"❌ TELEGRAM EMPTY RESPONSE: Attempted to send empty message to {chat_id}")
+        text = "I'm here to help your business! Try 'profile' to manage your business info, 'ideas' for marketing content (requires subscription), or 'help' for all options."
+    
+    print(f"🔍 SEND_TELEGRAM_MESSAGE: Sending {len(text)} chars to {chat_id}")
     
     try:
         response = requests.post(
@@ -1038,19 +1045,19 @@ Paste or forward the customer message now:"""
             return start_profile_management(phone_number, user_profile)
         
         elif command in ['hello', 'hi', 'hey', 'start']:
-            return """👋 *Welcome to JengaBI on Telegram!*
+            return """👋 *Welcome to JengaBI*
             
-I'm your AI marketing assistant for African businesses.
+I'm your AI marketing assistant for African Markets.
 
-*Try these commands:*
-ideas - Generate social media content
-strat - Create marketing strategies  
-qstn - Get business advice
-4wd - Analyze customer messages
-profile - Manage your business info
-status - Check subscription
-subscribe - Choose a plan
-help - See all commands
+*Use the commands below to get the services you desire:*
+*ideas* - Generate social media content
+*strat* - Create marketing strategies  
+*qstn* - Get business advice by asking any question
+*4wd* - Analyze customer messages by forwarding them here
+*profile* - Manage your business info
+*status* - Check business profile and subscription status
+*subscribe* - Choose a plan
+*help* - See all commands
 
 Ready to grow your business? 🚀"""
         
@@ -1186,7 +1193,7 @@ Ready to grow your business? 🚀"""
         if command == 'start':
             return """👋 *Welcome to JengaBI on Telegram!*
             
-I'm your AI marketing assistant for African businesses.
+I'm your AI marketing assistant for African Markets.
 
 *Try these commands:*
 /ideas - Generate social media content
@@ -1270,7 +1277,7 @@ Paste or forward the customer message now:"""
             if not user_profile.get('profile_complete'):
                 return "Please complete your business profile first using the /profile command."
             
-            return """💳 *SUBSCRIBE TO JENGABI*
+            return """💳 *SUBSCRIBE TO JENGABI YOUR BUSINESS INTELIGENCE ASSISTANT*
 
 To subscribe, please use our WhatsApp bot for now:
 
@@ -2350,7 +2357,7 @@ def get_system_prompt(output_type):
         'pro_ideas': "You are a viral content expert and social media algorithm specialist. Create trend-aware, applicable, and real high-conversion social media concepts that leverage psychological triggers and platform algorithms for maximum reach and engagement.",
         'strategies': "You are a strategic marketing director with expertise in African markets. Develop comprehensive, applicable, and real data-driven marketing strategies with clear roadmaps, KPIs, and measurable outcomes for business growth."
     }
-    return prompts.get(output_type, "You are a marketing expert for African businesses.")
+    return prompts.get(output_type, "You are a marketing expert for African Markets.")
 
 def get_fallback_content(output_type, products):
     """Provide quality fallback content when API fails"""
