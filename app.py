@@ -945,11 +945,20 @@ def process_telegram_message(chat_id, incoming_msg):
             session['business_data'] = {}
             return onboarding_response
                   
-    # ✅ IDENTICAL SESSION STATE MANAGEMENT AS WHATSAPP
+            # ✅ IDENTICAL SESSION STATE MANAGEMENT AS WHATSAPP
     session = ensure_user_session(phone_number)
 
-        # ✅ IDENTICAL SESSION STATE MANAGEMENT AS WHATSAPP
-    session = ensure_user_session(phone_number)
+    # ✅ CRITICAL: CHECK FOR PROFILE MANAGEMENT SESSION FIRST
+    if session.get('managing_profile'):
+        print(f"🔍 TELEGRAM PROFILE MGMT: User in profile management, step={session.get('profile_step')}")
+        profile_complete, response_message = handle_profile_management(phone_number, incoming_msg, user_profile)
+        print(f"🔍 TELEGRAM PROFILE MGMT: Response length: {len(response_message)}")
+        return response_message
+    
+    # Handle onboarding responses (SAME as WhatsApp)
+    if session.get('onboarding'):
+        onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
+        return response_message
     
     # ✅ CRITICAL: ADD COMMAND PROCESSING FOR REGULAR MESSAGES
     print(f"🔍 TELEGRAM COMMAND DEBUG: Processing message '{incoming_msg}' for complete profile")
