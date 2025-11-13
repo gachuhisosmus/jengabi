@@ -881,15 +881,19 @@ def telegram_webhook():
         return "OK"
 
 def send_telegram_message(chat_id, text):
-    """Send message to Telegram user - WITH EMPTY RESPONSE PROTECTION"""
+    """Send message to Telegram user - WITH ENHANCED EMPTY RESPONSE PROTECTION"""
     if not TELEGRAM_TOKEN:
         print("❌ Cannot send Telegram message - no token")
         return
     
-    # ✅ CRITICAL: Prevent empty responses
+    # ✅ ENHANCED: Prevent empty or problematic responses
     if not text or len(text.strip()) == 0:
         print(f"❌ TELEGRAM EMPTY RESPONSE: Attempted to send empty message to {chat_id}")
-        text = "I'm here to help your business! Try 'profile' to manage your business info, 'ideas' for marketing content (requires subscription), or 'help' for all options."
+        text = "I'm here to help your business! Try '/profile' to manage your business info, '/ideas' for marketing content, or '/help' for all options."
+    
+    # Ensure response has minimum length and content
+    if len(text.strip()) < 10:
+        text = "I'm processing your request. Please try again or use '/help' to see available commands."
     
     print(f"🔍 SEND_TELEGRAM_MESSAGE: Sending {len(text)} chars to {chat_id}")
     
@@ -900,21 +904,19 @@ def send_telegram_message(chat_id, text):
                 "chat_id": chat_id,
                 "text": text,
                 "parse_mode": "Markdown"
-            }
+            },
+            timeout=10
         )
         if response.status_code == 200:
             print(f"✅ Telegram message sent to {chat_id}")
         else:
-            print(f"❌ Telegram send failed: {response.text}")
+            print(f"❌ Telegram send failed: {response.status_code} - {response.text}")
     except Exception as e:
         print(f"❌ Telegram send error: {e}")
 
 def process_telegram_message(chat_id, incoming_msg):
     """Process message using EXACT SAME logic as WhatsApp webhook"""
-    # Use Telegram ID as phone number for session management
     phone_number = f"telegram:{chat_id}"
-    
-    # Get or create user profile (SAME as WhatsApp)
     user_profile = get_or_create_profile(phone_number)
     
     if not user_profile:
@@ -922,262 +924,37 @@ def process_telegram_message(chat_id, incoming_msg):
     
     session = ensure_user_session(phone_number)
     
-        # ✅ ENHANCED PROFILE COMPLETION FLOW WITH DATABASE VERIFICATION
-    print(f"🔍 TELEGRAM DEBUG: User profile complete: {user_profile.get('profile_complete')}")
-    print(f"🔍 TELEGRAM DEBUG: Session state: onboarding={session.get('onboarding')}")
+    # ✅ PRIORITY: Handle exit/cancel commands first
+    if incoming_msg.strip().lower() in ['exit', 'cancel', 'back', 'menu']:
+        # Clear all session states
+        session.update({
+            'onboarding': False,
+            'awaiting_product_selection': False,
+            'awaiting_custom_product': False,
+            'adding_products': False,
+            'managing_profile': False,
+            'awaiting_qstn': False,
+            'awaiting_4wd': False,
+            'continue_data': None,
+            'profile_step': None,
+            'updating_field': None,
+            'editing_index': None
+        })
+        return "Returning to main menu. Use /help to see available commands."
 
-    if not user_profile.get('profile_complete'):
-        # Check if user is already in onboarding
-        if session.get('onboarding'):
-            onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
-            
-            # ✅ CRITICAL: Refresh user profile after onboarding completion
-            if onboarding_complete:
-                user_profile = get_or_create_profile(phone_number)  # Refresh from database
-                print(f"🔄 PROFILE REFRESHED: Complete={user_profile.get('profile_complete')}")
-            
-            return response_message
-        else:
-            # Start new onboarding
-            onboarding_response = start_business_onboarding(phone_number, user_profile)
-            session['onboarding'] = True
-            session['onboarding_step'] = 0
-            session['business_data'] = {}
-            return onboarding_response
-                  
-            # ✅ IDENTICAL SESSION STATE MANAGEMENT AS WHATSAPP
-    session = ensure_user_session(phone_number)
-
-    # ✅ CRITICAL: CHECK FOR PROFILE MANAGEMENT SESSION FIRST
+    # ✅ Handle profile management first if active
     if session.get('managing_profile'):
-        print(f"🔍 TELEGRAM PROFILE MGMT: User in profile management, step={session.get('profile_step')}")
+        print(f"🔧 TELEGRAM: In profile management, step={session.get('profile_step')}")
         profile_complete, response_message = handle_profile_management(phone_number, incoming_msg, user_profile)
-        print(f"🔍 TELEGRAM PROFILE MGMT: Response length: {len(response_message)}")
+        print(f"🔧 TELEGRAM: Profile management response length: {len(response_message)}")
         return response_message
-    
-    # Handle onboarding responses (SAME as WhatsApp)
+
+    # ✅ Handle onboarding if active
     if session.get('onboarding'):
         onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
         return response_message
-    
-    # ✅ CRITICAL: ADD COMMAND PROCESSING FOR REGULAR MESSAGES
-    print(f"🔍 TELEGRAM COMMAND DEBUG: Processing message '{incoming_msg}' for complete profile")
-    
-    # Handle regular text messages (not commands starting with /)
-    if not incoming_msg.startswith('/'):
-        print(f"🔍 TELEGRAM: Processing regular message '{incoming_msg}'")
-       
-        # ✅ CHECK FOR TEXT-BASED COMMANDS (like WhatsApp)
-        command = incoming_msg.strip().lower()
-        
-        if command == 'ideas':
-            print(f"🔍 TELEGRAM IDEAS: Processing 'ideas' command")
-            if not check_subscription(user_profile['id']):
-                return "🔒 You need a subscription to use this feature. Use /subscribe to choose a plan."
-            
-            remaining = get_remaining_messages(user_profile['id'])
-            if remaining <= 0:
-                return "You've used all your available AI content generations for this period. Use /status to check your usage."
-            
-            # DETERMINE OUTPUT TYPE
-            plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
-            if plan_info and plan_info.get('plan_type') == 'pro':
-                session['output_type'] = 'pro_ideas'
-            else:
-                session['output_type'] = 'ideas'
-            
-            session['awaiting_product_selection'] = True
-            print(f"🔍 TELEGRAM IDEAS: Set output_type to '{session['output_type']}'")
-            
-            return start_product_selection(phone_number, user_profile)
-        
-        elif command == 'strat':
-            print(f"🔍 TELEGRAM STRAT: Processing 'strat' command")
-            if not check_subscription(user_profile['id']):
-                return "🔒 You need a subscription to use this feature. Use /subscribe to choose a plan."
-            
-            plan_info = get_user_plan_info(user_profile['id'])
-            if not plan_info or plan_info.get('plan_type') not in ['growth', 'pro']:
-                return "🔒 Marketing strategies are available in Growth and Pro plans only. Use /subscribe to upgrade!"
-            
-            remaining = get_remaining_messages(user_profile['id'])
-            if remaining <= 0:
-                return "You've used all your available AI content generations for this period. Use /status to check your usage."
-            
-            session['output_type'] = 'strategies'
-            session['awaiting_product_selection'] = True
-            print(f"🔍 TELEGRAM STRAT: Set output_type to 'strategies'")
-            
-            return start_product_selection(phone_number, user_profile)
-        
-        elif command == 'qstn':
-            print(f"🔍 TELEGRAM QSTN: Processing 'qstn' command")
-            if not check_subscription(user_profile['id']):
-                return "You need a subscription to use business Q&A. Use /subscribe to choose a plan."
-            
-            session['awaiting_qstn'] = True
-            return """*🤔 BUSINESS ADVICE REQUEST*
 
-What's your business question? I'll provide personalized advice based on your business type and context.
-
-Examples:
-• "How should I price my new products?"
-• "What's the best way to handle customer complaints?" 
-• "How can I attract more customers to my store?"
-
-Ask me anything about your business operations, marketing, or customer service:"""
-        
-        elif command == '4wd':
-            print(f"🔍 TELEGRAM 4WD: Processing '4wd' command")
-            if not check_subscription(user_profile['id']):
-                return "You need a subscription to analyze customer messages. Use /subscribe to choose a plan."
-            
-            session['awaiting_4wd'] = True
-            return """*📞 CUSTOMER MESSAGE ANALYSIS*
-
-Forward or paste a customer message you'd like me to analyze. I'll provide:
-
-• Sentiment analysis
-• Key insights & concerns  
-• Response recommendations
-• Business improvement tips
-
-Paste or forward the customer message now:"""
-        
-        elif command in ['status', 'subscription']:
-            return get_telegram_status(user_profile)
-        
-        elif command in ['help', 'commands']:
-            return get_telegram_help(user_profile)
-        
-        elif command in ['profile', 'business']:
-            return start_profile_management(phone_number, user_profile)
-        
-        elif command in ['hello', 'hi', 'hey', 'start']:
-            return """👋 *Welcome to JengaBI*
-            
-I'm your AI marketing assistant for African Markets.
-
-*Use the commands below to get the services you desire:*
-*ideas* - Generate social media content
-*strat* - Create marketing strategies  
-*qstn* - Get business advice by asking any question
-*4wd* - Analyze customer messages by forwarding them here
-*profile* - Manage your business info
-*status* - Check business profile and subscription status
-*subscribe* - Choose a plan
-*help* - See all commands
-
-Ready to grow your business? 🚀"""
-        
-        # Handle session states first (existing code)
-        if session.get('awaiting_qstn'):
-            session['awaiting_qstn'] = False
-            question = incoming_msg.strip()
-            if not question or len(question) < 5:
-                return "Please ask a specific business question (at least 5 characters). Use 'qstn' to try again."
-            
-            qstn_response = handle_qstn_command(phone_number, user_profile, question)
-            return qstn_response
-        
-        elif session.get('awaiting_4wd'):
-            session['awaiting_4wd'] = False
-            customer_message = incoming_msg.strip()
-            if not customer_message or len(customer_message) < 5:
-                return "Please provide a customer message to analyze (at least 5 characters). Use '4wd' to try again."
-            
-            analysis_response = handle_4wd_command(phone_number, user_profile, customer_message)
-            return analysis_response
-        
-        elif session.get('awaiting_product_selection'):
-            selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
-            if error_message:
-                return error_message
-            elif selected_products:
-                session['awaiting_product_selection'] = False
-                output_type = session.get('output_type', 'ideas')
-                
-                if 'output_type' in session:
-                    del session['output_type']
-                
-                ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
-                headers = {
-                    'ideas': "🎯 SOCIAL MEDIA CONTENT IDEAS",
-                    'pro_ideas': "🚀 PREMIUM VIRAL CONTENT CONCEPTS", 
-                    'strategies': "📊 COMPREHENSIVE MARKETING STRATEGY"
-                }
-                header = headers.get(output_type, "🎯 MARKETING CONTENT")
-                return f"{header} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
-        
-        # Default intelligent response for regular messages
-        return get_intelligent_response(incoming_msg, user_profile)
-       
-        # Handle session states first
-        if session.get('awaiting_qstn'):
-            session['awaiting_qstn'] = False
-            question = incoming_msg.strip()
-            if not question or len(question) < 5:
-                return "Please ask a specific business question (at least 5 characters). Use /qstn to try again."
-            
-            qstn_response = handle_qstn_command(phone_number, user_profile, question)
-            return qstn_response
-        
-        elif session.get('awaiting_4wd'):
-            session['awaiting_4wd'] = False
-            customer_message = incoming_msg.strip()
-            if not customer_message or len(customer_message) < 5:
-                return "Please provide a customer message to analyze (at least 5 characters). Use /4wd to try again."
-            
-            analysis_response = handle_4wd_command(phone_number, user_profile, customer_message)
-            return analysis_response
-        
-        elif session.get('awaiting_product_selection'):
-            selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
-            if error_message:
-                return error_message
-            elif selected_products:
-                session['awaiting_product_selection'] = False
-                output_type = session.get('output_type', 'ideas')
-                
-                if 'output_type' in session:
-                    del session['output_type']
-                
-                ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
-                headers = {
-                    'ideas': "🎯 SOCIAL MEDIA CONTENT IDEAS",
-                    'pro_ideas': "🚀 PREMIUM VIRAL CONTENT CONCEPTS", 
-                    'strategies': "📊 COMPREHENSIVE MARKETING STRATEGY"
-                }
-                header = headers.get(output_type, "🎯 MARKETING CONTENT")
-                return f"{header} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
-        
-        # Default intelligent response for regular messages
-        return get_intelligent_response(incoming_msg, user_profile)
-        
-    # Handle onboarding responses (SAME as WhatsApp)
-    if session.get('onboarding'):
-        onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
-        return response_message
-    
-    # ✅ IDENTICAL SUBSCRIPTION CHECKING AS WHATSAPP
-    def check_telegram_subscription(required_plan=None):
-        """SAME subscription logic as WhatsApp"""
-        if not check_subscription(user_profile['id']):
-            return "🔒 You need a subscription to use this feature. Use /subscribe to choose a plan."
-        
-        if required_plan:
-            plan_info = get_user_plan_info(user_profile['id'])
-            if not plan_info or plan_info.get('plan_type') not in required_plan:
-                return f"🔒 This feature requires {required_plan} plan. Use /subscribe to upgrade!"
-        
-        # Check message limits (SAME as WhatsApp)
-        remaining = get_remaining_messages(user_profile['id'])
-        if remaining <= 0:
-            return "You've used all your available AI content generations for this period. Use /status to check your usage."
-        
-        return None
-    
-    # ✅ CONTINUE SYSTEM (SAME as WhatsApp)
+    # ✅ Handle continue command
     if incoming_msg.strip() == 'cont':
         if session.get('continue_data'):
             next_part = get_next_continue_part(session)
@@ -1185,192 +962,21 @@ Ready to grow your business? 🚀"""
                 return next_part
             else:
                 session['continue_data'] = None
-                return "No more content to continue. Start a new command like /ideas, /strat, /qstn, or /4wd."
-        else:
-            return "No ongoing content to continue. Start a new command like /ideas, /strat, /qstn, or /4wd."
-    
-    # ✅ CLEAR CONTINUE DATA (SAME as WhatsApp)
+                return "No more content to continue. Start a new command."
+        return "No ongoing content to continue."
+
+    # ✅ Clear stale continue data for new commands
     if (session.get('continue_data') and 
         incoming_msg.strip() not in ['cont'] and
         not any(session.get(state) for state in ['awaiting_qstn', 'awaiting_4wd', 'awaiting_product_selection', 'onboarding', 'managing_profile'])):
         session['continue_data'] = None
-    
-    # ✅ COMMAND PROCESSING (SAME LOGIC AS WHATSAPP)
+
+    # ✅ Handle command-based messages (starting with /)
     if incoming_msg.startswith('/'):
-        command = incoming_msg[1:].lower()
-        
-        if command == 'start':
-            return """👋 *Welcome to JengaBI on Telegram!*
-            
-I'm your AI marketing assistant for African Markets.
-
-*Try these commands:*
-/ideas - Generate social media content
-/strat - Create marketing strategies  
-/qstn - Get business advice
-/4wd - Analyze customer messages
-/profile - Manage your business info
-/status - Check subscription
-/subscribe - Choose a plan
-/help - See all commands
-
-Ready to grow your business? 🚀"""
-        
-        elif command == 'ideas':
-            sub_check = check_telegram_subscription()
-            if sub_check:
-                return sub_check
-            
-            # SAME PRODUCT SELECTION FLOW AS WHATSAPP
-            session['awaiting_product_selection'] = True
-            
-            # DETERMINE OUTPUT TYPE (SAME AS WHATSAPP)
-            plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
-            if plan_info and plan_info.get('plan_type') == 'pro':
-                session['output_type'] = 'pro_ideas'
-            else:
-                session['output_type'] = 'ideas'
-            
-            return start_product_selection(phone_number, user_profile)
-        
-        elif command == 'strat':
-            sub_check = check_telegram_subscription(['growth', 'pro'])
-            if sub_check:
-                return sub_check
-            
-            session['awaiting_product_selection'] = True
-            session['output_type'] = 'strategies'
-            return start_product_selection(phone_number, user_profile)
-        
-        elif command == 'qstn':
-            sub_check = check_telegram_subscription()
-            if sub_check:
-                return sub_check
-            
-            session['awaiting_qstn'] = True
-            return """*🤔 BUSINESS ADVICE REQUEST*
-
-What's your business question? I'll provide personalized advice based on your business type and context.
-
-Examples:
-• "How should I price my new products?"
-• "What's the best way to handle customer complaints?" 
-• "How can I attract more customers to my store?"
-
-Ask me anything about your business operations, marketing, or customer service:"""
-        
-        elif command == '4wd':
-            sub_check = check_telegram_subscription()
-            if sub_check:
-                return sub_check
-            
-            session['awaiting_4wd'] = True
-            return """*📞 CUSTOMER MESSAGE ANALYSIS*
-
-Forward or paste a customer message you'd like me to analyze. I'll provide:
-
-• Sentiment analysis
-• Key insights & concerns  
-• Response recommendations
-• Business improvement tips
-
-Paste or forward the customer message now:"""
-        
-        elif command == 'profile':
-            return start_profile_management(phone_number, user_profile)
-        
-        elif command == 'status':
-            return get_telegram_status(user_profile)
-        
-        elif command == 'subscribe':
-            if not user_profile.get('profile_complete'):
-                return "Please complete your business profile first using the /profile command."
-            
-            return """💳 *SUBSCRIBE TO JENGABI YOUR BUSINESS INTELIGENCE ASSISTANT*
-
-To subscribe, please use our WhatsApp bot for now:
-
-📱 *WhatsApp:* +14155238886
-
-We're working on Telegram payments integration and will notify you when it's ready!
-
-*Available Plans:*
-🎯 BASIC - KSh 130/month
-🚀 GROWTH - KSh 249/month  
-💎 PRO - KSh 599/month"""
-        
-        elif command == 'help':
-            return get_telegram_help(user_profile)
+        return handle_telegram_commands(phone_number, user_profile, incoming_msg[1:].lower())
     
-    # ✅ HANDLE SESSION STATES (SAME AS WHATSAPP)
-    # QSTN question input
-    if session.get('awaiting_qstn'):
-        session['awaiting_qstn'] = False
-        
-        question = incoming_msg.strip()
-        if not question or len(question) < 5:
-            return "Please ask a specific business question (at least 5 characters). Use /qstn to try again."
-        
-        qstn_response = handle_qstn_command(phone_number, user_profile, question)
-        
-        # SAME CONTINUE SYSTEM AS WHATSAPP
-        if len(qstn_response) > 1000:
-            first_part = setup_continue_session(session, 'qstn', qstn_response, {'question': question})
-            return first_part
-        else:
-            return qstn_response
-    
-    # 4WD message input (SAME AS WHATSAPP)
-    if session.get('awaiting_4wd'):
-        session['awaiting_4wd'] = False
-        
-        customer_message = incoming_msg.strip()
-        if not customer_message or len(customer_message) < 5:
-            return "Please provide a customer message to analyze (at least 5 characters). Use /4wd to try again."
-        
-        analysis_response = handle_4wd_command(phone_number, user_profile, customer_message)
-        
-        if len(analysis_response) > 1000:
-            first_part = setup_continue_session(session, '4wd', analysis_response, {'customer_message': customer_message})
-            return first_part
-        else:
-            return analysis_response
-    
-    # Product selection (SAME AS WHATSAPP)
-    if session.get('awaiting_product_selection'):
-        selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
-        
-        if error_message:
-            return error_message
-        elif selected_products:
-            session['awaiting_product_selection'] = False
-            output_type = session.get('output_type', 'ideas')
-            
-            if 'output_type' in session:
-                del session['output_type']
-            
-            ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
-            
-            # SAME CONTINUE SYSTEM AS WHATSAPP
-            if len(ideas) > 1000:
-                content_type = "STRATEGIES" if output_type == 'strategies' else "CONTENT"
-                header = f"🎯 {content_type} FOR {', '.join(selected_products).upper()}:"
-                full_content = header + "\n\n" + ideas
-                
-                first_part = setup_continue_session(session, 'ideas', full_content, {'products': selected_products, 'output_type': output_type})
-                return first_part
-            else:
-                headers = {
-                    'ideas': "🎯 SOCIAL MEDIA CONTENT IDEAS",
-                    'pro_ideas': "🚀 PREMIUM VIRAL CONTENT CONCEPTS", 
-                    'strategies': "📊 COMPREHENSIVE MARKETING STRATEGY"
-                }
-                header = headers.get(output_type, "🎯 MARKETING CONTENT")
-                return f"{header} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
-    
-    # Default response (SAME AS WHATSAPP)
-    intelligent_response = get_intelligent_response(incoming_msg, user_profile)
-    return intelligent_response
+    # ✅ Handle session states for regular messages
+    return handle_telegram_session_states(phone_number, user_profile, incoming_msg)
 
 def get_telegram_status(user_profile):
     """Get Telegram-friendly status message"""
@@ -1444,7 +1050,7 @@ def get_telegram_help(user_profile):
         else:
             help_message += "\n\n*Subscribe to unlock:*"
             help_message += "\n• Business Q&A (/qstn)"
-            help_message += "\n• Customer analysis (/4wd)" 
+            help_message += "\n• Customer messages or email analysis (/4wd)" 
             help_message += "\n• Marketing strategies (/strat)"
             help_message += "\n• And much more!"
             help_message += "\n\nUse /subscribe to learn about plans."
@@ -1463,6 +1069,206 @@ def get_telegram_help(user_profile):
 /help - This message
 
 Use /subscribe to unlock all features!"""
+
+def handle_telegram_commands(phone_number, user_profile, command):
+    """Handle Telegram commands specifically"""
+    session = ensure_user_session(phone_number)
+    
+    # Clear any existing states when starting new commands
+    session.update({
+        'awaiting_qstn': False,
+        'awaiting_4wd': False,
+        'awaiting_product_selection': False,
+        'continue_data': None
+    })
+    
+    if command == 'start':
+        return """👋 *Welcome to JengaBI on Telegram!*
+        
+I'm your AI marketing assistant for African Markets.
+
+*Try these commands:*
+/ideas - Generate social media content
+/strat - Create marketing strategies  
+/qstn - Get business advice
+/4wd - Analyze customer messages
+/profile - Manage your business info
+/status - Check subscription
+/subscribe - Choose a plan
+/help - See all commands
+
+Ready to grow your business? 🚀"""
+    
+    elif command == 'ideas':
+        return handle_telegram_ideas_command(phone_number, user_profile)
+    
+    elif command == 'strat':
+        return handle_telegram_strat_command(phone_number, user_profile)
+    
+    elif command == 'qstn':
+        return handle_telegram_qstn_command(phone_number, user_profile)
+    
+    elif command == '4wd':
+        return handle_telegram_4wd_command(phone_number, user_profile)
+    
+    elif command == 'profile':
+        return start_profile_management(phone_number, user_profile)
+    
+    elif command == 'status':
+        return get_telegram_status(user_profile)
+    
+    elif command == 'subscribe':
+        return handle_telegram_subscribe_command(user_profile)
+    
+    elif command == 'help':
+        return get_telegram_help(user_profile)
+    
+    else:
+        return "Unknown command. Use /help to see available commands."
+
+def handle_telegram_ideas_command(phone_number, user_profile):
+    """Handle Telegram ideas command"""
+    session = ensure_user_session(phone_number)
+    
+    if not check_subscription(user_profile['id']):
+        return "🔒 You need a subscription to use this feature. Use /subscribe to choose a plan."
+    
+    remaining = get_remaining_messages(user_profile['id'])
+    if remaining <= 0:
+        return "You've used all your available AI content generations for this period. Use /status to check your usage."
+    
+    # Determine output type based on plan
+    plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
+    if plan_info and plan_info.get('plan_type') == 'pro':
+        session['output_type'] = 'pro_ideas'
+    else:
+        session['output_type'] = 'ideas'
+    
+    session['awaiting_product_selection'] = True
+    return start_product_selection(phone_number, user_profile)
+
+def handle_telegram_strat_command(phone_number, user_profile):
+    """Handle Telegram strat command"""
+    session = ensure_user_session(phone_number)
+    
+    if not check_subscription(user_profile['id']):
+        return "🔒 You need a subscription to use this feature. Use /subscribe to choose a plan."
+    
+    plan_info = get_user_plan_info(user_profile['id'])
+    if not plan_info or plan_info.get('plan_type') not in ['growth', 'pro']:
+        return "🔒 Marketing strategies are available in Growth and Pro plans only. Use /subscribe to upgrade!"
+    
+    remaining = get_remaining_messages(user_profile['id'])
+    if remaining <= 0:
+        return "You've used all your available AI content generations for this period. Use /status to check your usage."
+    
+    session['output_type'] = 'strategies'
+    session['awaiting_product_selection'] = True
+    return start_product_selection(phone_number, user_profile)
+
+def handle_telegram_qstn_command(phone_number, user_profile):
+    """Handle Telegram qstn command"""
+    session = ensure_user_session(phone_number)
+    
+    if not check_subscription(user_profile['id']):
+        return "You need a subscription to use business Q&A. Use /subscribe to choose a plan."
+    
+    session['awaiting_qstn'] = True
+    return """*🤔 BUSINESS ADVICE REQUEST*
+
+What's your business question? I'll provide personalized advice based on your business type and context.
+
+Examples:
+• "How should I price my new products?"
+• "What's the best way to handle customer complaints?" 
+• "How can I attract more customers to my store?"
+
+Ask me anything about your business operations, marketing, or customer service:"""
+
+def handle_telegram_4wd_command(phone_number, user_profile):
+    """Handle Telegram 4wd command"""
+    session = ensure_user_session(phone_number)
+    
+    if not check_subscription(user_profile['id']):
+        return "You need a subscription to analyze customer messages. Use /subscribe to choose a plan."
+    
+    session['awaiting_4wd'] = True
+    return """*📞 CUSTOMER MESSAGE ANALYSIS*
+
+Forward or paste a customer message you'd like me to analyze. I'll provide:
+
+• Sentiment analysis
+• Key insights & concerns  
+• Response recommendations
+• Business improvement tips
+
+Paste or forward the customer message now:"""
+
+def handle_telegram_subscribe_command(user_profile):
+    """Handle Telegram subscribe command"""
+    if not user_profile.get('profile_complete'):
+        return "Please complete your business profile first using the /profile command."
+    
+    return """💳 *SUBSCRIBE TO JENGABI YOUR BUSINESS INTELIGENCE ASSISTANT*
+
+To subscribe, please use our WhatsApp bot for now:
+
+📱 *WhatsApp:* +14155238886
+
+We're working on Telegram payments integration and will notify you when it's ready!
+
+*Available Plans:*
+🎯 BASIC - KSh 130/month
+🚀 GROWTH - KSh 249/month  
+💎 PRO - KSh 599/month"""
+
+def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
+    """Handle Telegram session states for regular messages"""
+    session = ensure_user_session(phone_number)
+    
+    # Handle QSTN question input
+    if session.get('awaiting_qstn'):
+        session['awaiting_qstn'] = False
+        question = incoming_msg.strip()
+        if not question or len(question) < 5:
+            return "Please ask a specific business question (at least 5 characters). Use /qstn to try again."
+        
+        qstn_response = handle_qstn_command(phone_number, user_profile, question)
+        return qstn_response
+    
+    # Handle 4WD message input
+    elif session.get('awaiting_4wd'):
+        session['awaiting_4wd'] = False
+        customer_message = incoming_msg.strip()
+        if not customer_message or len(customer_message) < 5:
+            return "Please provide a customer message to analyze (at least 5 characters). Use /4wd to try again."
+        
+        analysis_response = handle_4wd_command(phone_number, user_profile, customer_message)
+        return analysis_response
+    
+    # Handle product selection
+    elif session.get('awaiting_product_selection'):
+        selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
+        if error_message:
+            return error_message
+        elif selected_products:
+            session['awaiting_product_selection'] = False
+            output_type = session.get('output_type', 'ideas')
+            
+            if 'output_type' in session:
+                del session['output_type']
+            
+            ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
+            headers = {
+                'ideas': "🎯 SOCIAL MEDIA CONTENT IDEAS",
+                'pro_ideas': "🚀 PREMIUM VIRAL CONTENT CONCEPTS", 
+                'strategies': "📊 COMPREHENSIVE MARKETING STRATEGY"
+            }
+            header = headers.get(output_type, "🎯 MARKETING CONTENT")
+            return f"{header} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
+    
+    # Default response for regular messages
+    return get_intelligent_response(incoming_msg, user_profile)
 
 @app.route('/debug-telegram', methods=['GET'])
 def debug_telegram():
@@ -2859,6 +2665,13 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
     # ... rest of existing code ...
     print(f"🔧 PROFILE MGMT DEBUG: Starting - step='{step}', incoming_msg='{incoming_msg}'")
     print(f"🔧 PROFILE MGMT DEBUG: Full session = {user_sessions[phone_number]}")
+
+    if incoming_msg.strip().lower() in ['exit', 'cancel', 'back', '9']:
+        session['managing_profile'] = False
+        session['profile_step'] = None
+        session['updating_field'] = None
+        session['editing_index'] = None
+        return True, "Returning to main menu. Use /help to see available commands."
     
     # Profile management menu
     if step == 'menu':
@@ -2910,7 +2723,7 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
         elif incoming_msg == '9':
             # Exit profile management
             user_sessions[phone_number]['managing_profile'] = False
-            return True, "Returning to main menu. Reply *'ideas'* for marketing ideas, *'strat'* for marketing strategies, *'qstn'* for business advices, *'4wd'* for customer analysis, *'status'* for subscription status, or *'help'* for options."
+            return True, "Returning to main menu. Reply *'ideas'* for marketing ideas, *'strat'* for marketing strategies, *'qstn'* for business advices, *'4wd'* for customer messages or email analysis, *'status'* for subscription status, or *'help'* for options."
         
         else:
             return False, "Please choose a valid option (1-9):"
