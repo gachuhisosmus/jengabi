@@ -946,6 +946,11 @@ def process_telegram_message(chat_id, incoming_msg):
     if session.get('managing_profile'):
         print(f"🔧 TELEGRAM: In profile management, step={session.get('profile_step')}")
         profile_complete, response_message = handle_profile_management(phone_number, incoming_msg, user_profile)
+        
+        if profile_complete:
+            session['managing_profile'] = False
+            session['profile_step'] = None
+
         print(f"🔧 TELEGRAM: Profile management response length: {len(response_message)}")
         return response_message
 
@@ -2656,74 +2661,70 @@ Reply with a number (1-9):
     return profile_summary
 
 def handle_profile_management(phone_number, incoming_msg, user_profile):
-    """Handle profile management steps - WITH SESSION DEBUG"""
+    """Handle profile management steps - WITH PROPER STATE EXIT"""
     session = ensure_user_session(phone_number)
     print(f"🔧 PROFILE MGMT DEBUG: Starting - step='{session.get('profile_step')}', incoming_msg='{incoming_msg}'")
-    print(f"🔧 PROFILE MGMT DEBUG: Full session = {session}")
+    
+    # ✅ PRIORITY: Handle exit/cancel commands FIRST
+    if incoming_msg.strip().lower() in ['exit', 'cancel', 'back', 'menu', '9']:
+        session.update({
+            'managing_profile': False,
+            'profile_step': None,
+            'updating_field': None,
+            'editing_index': None
+        })
+        return True, "Returning to main menu. Use /help to see available commands."
     
     step = session.get('profile_step', 'menu')
-    # ... rest of existing code ...
-    print(f"🔧 PROFILE MGMT DEBUG: Starting - step='{step}', incoming_msg='{incoming_msg}'")
-    print(f"🔧 PROFILE MGMT DEBUG: Full session = {user_sessions[phone_number]}")
-
-    if incoming_msg.strip().lower() in ['exit', 'cancel', 'back', '9']:
-        session['managing_profile'] = False
-        session['profile_step'] = None
-        session['updating_field'] = None
-        session['editing_index'] = None
-        return True, "Returning to main menu. Use /help to see available commands."
     
     # Profile management menu
     if step == 'menu':
-        print(f"🔧 PROFILE MGMT DEBUG: In menu branch")
-        if incoming_msg == '7':
-            print(f"🔧 PROFILE MGMT DEBUG: User selected 7 - managing products")
-            user_sessions[phone_number]['profile_step'] = 'managing_products'
-            return start_product_management(phone_number, user_profile)
         if incoming_msg == '1':
-            user_sessions[phone_number]['profile_step'] = 'updating_business_name'
-            user_sessions[phone_number]['updating_field'] = 'business_name'
+            session['profile_step'] = 'updating_business_name'
+            session['updating_field'] = 'business_name'
             return False, "What's your new business name?"
         
         elif incoming_msg == '2':
-            user_sessions[phone_number]['profile_step'] = 'updating_business_type'
-            user_sessions[phone_number]['updating_field'] = 'business_type'
+            session['profile_step'] = 'updating_business_type'
+            session['updating_field'] = 'business_type'
             return False, "What's your business type? (e.g., restaurant, salon, retail)"
         
         elif incoming_msg == '3':
-            user_sessions[phone_number]['profile_step'] = 'updating_location'
-            user_sessions[phone_number]['updating_field'] = 'business_location'
+            session['profile_step'] = 'updating_location'
+            session['updating_field'] = 'business_location'
             return False, "What's your new business location?"
         
         elif incoming_msg == '4':
-            user_sessions[phone_number]['profile_step'] = 'updating_phone'
-            user_sessions[phone_number]['updating_field'] = 'business_phone'
+            session['profile_step'] = 'updating_phone'
+            session['updating_field'] = 'business_phone'
             return False, "What's your new business phone number?"
         
         elif incoming_msg == '5':
-            user_sessions[phone_number]['profile_step'] = 'updating_website'
-            user_sessions[phone_number]['updating_field'] = 'website'
+            session['profile_step'] = 'updating_website'
+            session['updating_field'] = 'website'
             return False, "What's your website or social media link?"
         
         elif incoming_msg == '6':
-            user_sessions[phone_number]['profile_step'] = 'updating_goals'
-            user_sessions[phone_number]['updating_field'] = 'business_marketing_goals'
+            session['profile_step'] = 'updating_goals'
+            session['updating_field'] = 'business_marketing_goals'
             return False, "What are your new marketing goals?"
         
         elif incoming_msg == '7':
-            print(f"🔧 PROFILE MGMT DEBUG: User selected 7 - going to product management")
+            session['profile_step'] = 'product_menu'
             return start_product_management(phone_number, user_profile)
         
         elif incoming_msg == '8':
             # Show full profile and return to menu
             full_profile = get_full_profile_summary(user_profile)
-            user_sessions[phone_number]['profile_step'] = 'menu'
             return False, f"{full_profile}\n\nWhat would you like to update? (Reply 1-9)"
         
         elif incoming_msg == '9':
             # Exit profile management
-            user_sessions[phone_number]['managing_profile'] = False
-            return True, "Returning to main menu. Reply *'ideas'* for marketing ideas, *'strat'* for marketing strategies, *'qstn'* for business advices, *'4wd'* for customer messages or email analysis, *'status'* for subscription status, or *'help'* for options."
+            session.update({
+                'managing_profile': False,
+                'profile_step': None
+            })
+            return True, "Returning to main menu. Use /help to see available commands."
         
         else:
             return False, "Please choose a valid option (1-9):"
@@ -2731,7 +2732,7 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
     # Handle field updates
     elif step in ['updating_business_name', 'updating_business_type', 'updating_location', 
                   'updating_phone', 'updating_website', 'updating_goals']:
-        field = user_sessions[phone_number]['updating_field']
+        field = session['updating_field']
         
         # Update the field in database
         try:
@@ -2743,50 +2744,24 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
             user_profile[field] = incoming_msg
             
             # Return to menu
-            user_sessions[phone_number]['profile_step'] = 'menu'
+            session['profile_step'] = 'menu'
             return False, f"✅ {field.replace('_', ' ').title()} updated successfully!\n\nWhat would you like to update next? (Reply 1-9)"
             
         except Exception as e:
             print(f"Error updating profile: {e}")
-            user_sessions[phone_number]['profile_step'] = 'menu'
+            session['profile_step'] = 'menu'
             return False, f"❌ Error updating profile. Please try again.\n\nWhat would you like to update? (Reply 1-9)"
     
     # Handle product management
-    elif step == 'managing_products':
-        print(f"🔧 PROFILE MGMT DEBUG: Calling handle_product_management")
+    elif step in ['product_menu', 'adding_product', 'removing_product', 'editing_product', 'confirm_clear']:
         return handle_product_management(phone_number, incoming_msg, user_profile)
     
-    # Handle product menu 
-    elif step == 'product_menu':
-        print(f"🔧 PROFILE MGMT DEBUG: In product_menu branch, calling handle_product_management")
-        return handle_product_management(phone_number, incoming_msg, user_profile)
-        
-    # HANDLE ADDING_PRODUCT
-    elif step == 'adding_product':
-        print(f"🔧 PROFILE MGMT DEBUG: In adding_product branch, calling handle_product_management")
-        return handle_product_management(phone_number, incoming_msg, user_profile)
-        
-    # Handle Removing Product
-    elif step == 'removing_product':
-        print(f"🔧 PROFILE MGMT DEBUG: In removing_product branch, calling handle_product_management")
-        return handle_product_management(phone_number,incoming_msg,user_profile)
-    
-    # Handle product editing
-    elif step == 'editing_product':
-        print(f"🔧 PROFILE MGMT DEBUG: In editing_product branch, calling handle_product_management")
-        return handle_product_management(phone_number,incoming_msg, user_profile)
-    
-    # Handle Clear All Products
-    elif step == 'confirm_clear':
-        print(f"🔧 PROFILE MGMT DEBUG: In confirm_clear branch, calling handle_product_management")
-        return handle_product_management(phone_number, incoming_msg, user_profile)
-        
     # If we reach here, something went wrong - reset to menu
     else:
         print(f"🔧 PROFILE MGMT ERROR: Unknown step '{step}', resetting to menu")
-        user_sessions[phone_number]['profile_step'] = 'menu'
+        session['profile_step'] = 'menu'
         return False, "I didn't understand that. Please choose a valid option (1-9):"
-
+    
 def start_product_management(phone_number, user_profile):
     """Start product management sub-menu"""
     session = ensure_user_session(phone_number)
