@@ -345,30 +345,441 @@ def ensure_user_session(phone_number):
     
     return session
 
-# Define plans
-PLANS = {
+# ===== MPESA PHONE NUMBER MANAGEMENT =====
+
+def validate_kenyan_phone_number(phone_number):
+    """Validate and format Kenyan phone numbers for M-Pesa"""
+    try:
+        if not phone_number or not isinstance(phone_number, str):
+            return False, None, "Invalid phone number format"
+            
+        # Remove any whitespace and special characters
+        clean_phone = ''.join(filter(str.isdigit, str(phone_number)))
+        
+        if not clean_phone:
+            return False, None, "Phone number contains no digits"
+        
+        # Handle different formats
+        if clean_phone.startswith('0') and len(clean_phone) == 10:
+            # Convert 07... to 2547...
+            formatted = '254' + clean_phone[1:]
+        elif clean_phone.startswith('254') and len(clean_phone) == 12:
+            # Already in 254 format
+            formatted = clean_phone
+        elif clean_phone.startswith('7') and len(clean_phone) == 9:
+            # 712345678 format
+            formatted = '254' + clean_phone
+        elif clean_phone.startswith('+254') and len(clean_phone) == 13:
+            # +254712345678 format
+            formatted = clean_phone[1:]  # Remove +
+        else:
+            return False, None, "Invalid phone number format. Use: 0712345678 or 254712345678"
+        
+        # Final validation
+        if len(formatted) == 12 and formatted.startswith('254') and formatted[3:].isdigit():
+            return True, formatted, "Valid phone number"
+        else:
+            return False, None, "Invalid Kenyan phone number"
+            
+    except Exception as e:
+        return False, None, f"Phone validation error: {str(e)}"
+
+def extract_phone_from_whatsapp_format(whatsapp_phone):
+    """Extract phone number from WhatsApp format"""
+    try:
+        # Remove 'whatsapp:+' or 'whatsapp:' prefix
+        clean_phone = whatsapp_phone.replace('whatsapp:+', '').replace('whatsapp:', '')
+        return validate_kenyan_phone_number(clean_phone)
+    except Exception as e:
+        return False, None, f"WhatsApp phone extraction error: {str(e)}"
+
+def get_default_payment_number(chat_phone_number, platform):
+    """Get default payment number based on platform"""
+    if platform == 'whatsapp':
+        is_valid, formatted_phone, message = extract_phone_from_whatsapp_format(chat_phone_number)
+        if is_valid:
+            return formatted_phone
+    # Telegram or invalid WhatsApp - return None to force user input
+    return None
+
+def format_phone_for_display(phone_number):
+    """Format phone number for user display"""
+    try:
+        is_valid, formatted, message = validate_kenyan_phone_number(phone_number)
+        if is_valid:
+            # Convert 254712345678 to 0712 345 678 for display
+            return f"0{formatted[3:6]} {formatted[6:9]} {formatted[9:]}"
+        return phone_number
+    except:
+        return phone_number
+    
+# ===== MPESA SUBSCRIPTION CALCULATION FUNCTIONS =====
+
+def calculate_subscription_price(plan_type, duration_type, custom_months=None):
+    """Calculate final price with discounts"""
+    if plan_type not in ENHANCED_PLANS:
+        return None, "Invalid plan type"
+    
+    if duration_type not in MPESA_DURATIONS:
+        return None, "Invalid duration type"
+    
+    plan = ENHANCED_PLANS[plan_type]
+    duration = MPESA_DURATIONS[duration_type]
+    
+    # Get base price
+    if duration_type == 'weekly':
+        base_price = plan['weekly_price']
+        duration_days = duration['duration_days']
+        discount_percent = duration['discount']
+    elif duration_type == 'custom' and custom_months:
+        if custom_months < 2 or custom_months > 11:
+            return None, "Custom months must be between 2 and 11"
+        base_price = plan['monthly_price'] * custom_months
+        duration_days = custom_months * 30  # Approximate month as 30 days
+        discount_percent = duration['discount']
+    else:
+        # Fixed monthly durations
+        if duration_type == 'monthly':
+            months_factor = 1
+        elif duration_type == 'quarterly':
+            months_factor = 3
+        elif duration_type == 'biannual':
+            months_factor = 6
+        elif duration_type == 'annual':
+            months_factor = 12
+        
+        base_price = plan['monthly_price'] * months_factor
+        duration_days = duration['duration_days']
+        discount_percent = duration['discount']
+    
+    # Apply discount
+    discount_amount = (base_price * discount_percent) / 100
+    final_price = base_price - discount_amount
+    
+    # Ensure prices are integers (M-Pesa requires whole numbers)
+    final_price = round(final_price)
+    base_price = round(base_price)
+    discount_amount = round(discount_amount)
+    
+    return {
+        'final_amount': final_price,
+        'original_amount': base_price,
+        'discount_percent': discount_percent,
+        'discount_amount': discount_amount,
+        'duration_days': duration_days,
+        'plan_type': plan_type,
+        'duration_type': duration_type,
+        'custom_months': custom_months
+    }, None
+
+def generate_account_reference(plan_type, duration_type, custom_months=None):
+    """Generate M-Pesa account reference"""
+    plan_code = ENHANCED_PLANS[plan_type]['mpesa_code']
+    duration_suffix = MPESA_DURATIONS[duration_type]['mpesa_suffix']
+    
+    if duration_type == 'custom' and custom_months:
+        return f"JENGABI{plan_code}C{custom_months}"
+    else:
+        return f"JENGABI{plan_code}{duration_suffix}"
+
+def calculate_next_renewal_date(duration_days):
+    """Calculate subscription end date"""
+    from datetime import datetime, timedelta
+    return datetime.now() + timedelta(days=duration_days)
+
+# ===== ENHANCED MPESA SESSION MANAGEMENT =====
+
+def initialize_mpesa_subscription_flow(chat_phone, platform):
+    """Initialize M-Pesa subscription flow"""
+    session = ensure_user_session(chat_phone)
+    
+    # Get default payment number for WhatsApp users
+    default_payment = get_default_payment_number(chat_phone, platform)
+    
+    session['mpesa_subscription_flow'] = {
+        'step': 'plan_selection',
+        'selected_plan': None,
+        'selected_duration': None,
+        'custom_months': None,
+        'calculated_price': 0.00,
+        'duration_days': 0,
+        'original_amount': 0.00,
+        'discount_percent': 0,
+        
+        # Payment Number Management
+        'payment_phone_number': default_payment,
+        'payment_number_provided': default_payment is not None,
+        'current_chat_phone': chat_phone,
+        'platform': platform,
+        
+        # M-Pesa Specific
+        'mpesa_checkout_id': None,
+        'mpesa_account_reference': None,
+        'payment_status': 'initiated',
+        'payment_retries': 0,
+        'mpesa_merchant_id': None
+    }
+    
+    return session
+
+def update_subscription_flow_step(session, step, data=None):
+    """Update subscription flow step"""
+    if 'mpesa_subscription_flow' not in session:
+        return False
+    
+    session['mpesa_subscription_flow']['step'] = step
+    if data:
+        session['mpesa_subscription_flow'].update(data)
+    
+    return True
+
+def clear_mpesa_subscription_flow(session):
+    """Clear M-Pesa subscription flow"""
+    if 'mpesa_subscription_flow' in session:
+        del session['mpesa_subscription_flow']
+
+def get_current_subscription_flow(session):
+    """Get current subscription flow"""
+    return session.get('mpesa_subscription_flow')
+
+# ===== ENHANCED MPESA SUBSCRIPTION ACTIVATION =====
+
+def activate_enhanced_subscription(chat_phone, payment_data, subscription_data):
+    """Activate user subscription with enhanced M-Pesa data"""
+    try:
+        # Find user profile
+        response = supabase.table('profiles').select('*').eq('phone_number', chat_phone).execute()
+        if not response.data:
+            print(f"❌ User not found for phone: {chat_phone}")
+            return False
+        
+        user_profile = response.data[0]
+        profile_id = user_profile['id']
+        
+        # Calculate next renewal date
+        next_renewal = calculate_next_renewal_date(subscription_data['duration_days'])
+        
+        # Create or update subscription
+        subscription_record = {
+            'profile_id': profile_id,
+            'plan_type': subscription_data['plan_type'],
+            'is_active': True,
+            'payment_status': 'completed',
+            
+            # M-Pesa Payment Details
+            'mpesa_checkout_id': payment_data.get('checkout_request_id'),
+            'mpesa_receipt_number': payment_data.get('mpesa_receipt'),
+            'mpesa_phone_number': payment_data.get('phone_number'),
+            'chat_phone_number': chat_phone,
+            'mpesa_amount': payment_data.get('amount'),
+            'mpesa_transaction_date': payment_data.get('transaction_date'),
+            
+            # Enhanced Subscription Details
+            'payment_duration_type': subscription_data['duration_type'],
+            'custom_months': subscription_data.get('custom_months'),
+            'original_amount': subscription_data['original_amount'],
+            'discount_percent': subscription_data['discount_percent'],
+            'duration_days': subscription_data['duration_days'],
+            'next_renewal_date': next_renewal.isoformat(),
+            'account_reference': subscription_data.get('account_reference'),
+            
+            # Timestamps
+            'start_date': datetime.now().isoformat(),
+            'end_date': next_renewal.isoformat(),
+            'updated_at': datetime.now().isoformat()
+        }
+        
+        # Check if subscription exists
+        existing_sub = supabase.table('subscriptions').select('*').eq('profile_id', profile_id).execute()
+        if existing_sub.data:
+            # Update existing subscription
+            supabase.table('subscriptions').update(subscription_record).eq('profile_id', profile_id).execute()
+        else:
+            # Create new subscription
+            supabase.table('subscriptions').insert(subscription_record).execute()
+        
+        # Log M-Pesa transaction
+        log_mpesa_transaction(profile_id, payment_data, subscription_data)
+        
+        print(f"✅ ENHANCED SUBSCRIPTION ACTIVATED: {subscription_data['plan_type']} plan for {chat_phone}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Enhanced subscription activation error: {e}")
+        return False
+
+def log_mpesa_transaction(profile_id, payment_data, subscription_data):
+    """Log M-Pesa transaction details"""
+    try:
+        transaction_record = {
+            'profile_id': profile_id,
+            'checkout_request_id': payment_data.get('checkout_request_id'),
+            'merchant_request_id': payment_data.get('merchant_request_id'),
+            'result_code': payment_data.get('result_code', 0),
+            'result_desc': payment_data.get('result_desc', 'Success'),
+            'amount': payment_data.get('amount'),
+            'mpesa_receipt_number': payment_data.get('mpesa_receipt'),
+            'phone_number': payment_data.get('phone_number'),
+            'transaction_date': payment_data.get('transaction_date'),
+            'account_reference': subscription_data.get('account_reference'),
+            'business_shortcode': MPESA_SHORTCODE,
+            'transaction_type': 'CustomerPayBillOnline'
+        }
+        
+        supabase.table('mpesa_transactions').insert(transaction_record).execute()
+        print(f"✅ M-Pesa transaction logged for {profile_id}")
+        
+    except Exception as e:
+        print(f"❌ M-Pesa transaction logging error: {e}")
+
+ENHANCED_PLANS = {
     'basic': {
-        'price': 130,
+        'monthly_price': 130,
+        'weekly_price': 50,
         'description': '5 social media ideas per week + Business Q&A + Customer message analysis',
-        'keyword': 'basic',
+        'commands': ['ideas', '4wd', 'qstn'],
         'output_type': 'ideas',
-        'commands': ['ideas', '4wd', 'qstn']
+        'mpesa_code': 'BASIC'
     },
     'growth': {
-        'price': 249,
+        'monthly_price': 249,
+        'weekly_price': 80,
         'description': '15 ideas + Marketing strategies + Business Q&A + Customer message analysis',
-        'keyword': 'growth',
+        'commands': ['ideas', 'strat', '4wd', 'qstn'],
         'output_type': 'ideas_strategy',
-        'commands': ['ideas', 'strat', '4wd', 'qstn']
+        'mpesa_code': 'GROWTH'
     },
     'pro': {
-        'price': 599,
+        'monthly_price': 599,
+        'weekly_price': 150,
         'description': 'Unlimited ideas + Full strategies + Real-time trends + Competitor insights + Business Q&A + Customer message analysis',
-        'keyword': 'pro',
+        'commands': ['ideas', 'strat', 'trends', 'competitor', '4wd', 'qstn'],
         'output_type': 'strategies',
-        'commands': ['ideas', 'strat', 'trends', 'competitor', '4wd', 'qstn']
+        'mpesa_code': 'PRO'
     }
 }
+
+MPESA_DURATIONS = {
+    'weekly': {
+        'type': 'weekly',
+        'duration_days': 7,
+        'discount': 0,
+        'mpesa_suffix': 'W1'
+    },
+    'monthly': {
+        'type': 'monthly',
+        'duration_days': 30,
+        'discount': 0,
+        'mpesa_suffix': 'M1'
+    },
+    'quarterly': {
+        'type': 'quarterly',
+        'duration_days': 90,
+        'discount': 10,
+        'mpesa_suffix': 'M3'
+    },
+    'biannual': {
+        'type': 'biannual',
+        'duration_days': 180,
+        'discount': 15,
+        'mpesa_suffix': 'M6'
+    },
+    'annual': {
+        'type': 'annual',
+        'duration_days': 365,
+        'discount': 20,
+        'mpesa_suffix': 'M12'
+    },
+    'custom': {
+        'type': 'custom',
+        'duration_days': None,
+        'discount': 5,
+        'mpesa_suffix': 'CUS'
+    }
+}
+
+# Payment status constants
+PAYMENT_STATUS = {
+    'PENDING': 'pending',
+    'PROCESSING': 'processing', 
+    'COMPLETED': 'completed',
+    'FAILED': 'failed',
+    'CANCELLED': 'cancelled'
+}
+
+# ===== MPESA CORE FUNCTIONS TESTING =====
+
+@app.route('/test-mpesa-core', methods=['GET'])
+def test_mpesa_core_functions():
+    """Test core M-Pesa functions"""
+    tests = {}
+    
+    # Test 1: Phone Validation
+    test_phones = [
+        '0712345678',
+        '254712345678',
+        '+254712345678', 
+        '712345678',
+        'whatsapp:+254712345678',
+        'invalid'
+    ]
+    
+    phone_results = {}
+    for phone in test_phones:
+        is_valid, formatted, message = validate_kenyan_phone_number(phone)
+        phone_results[phone] = {
+            'valid': is_valid, 
+            'formatted': formatted, 
+            'message': message,
+            'display': format_phone_for_display(phone) if is_valid else 'N/A'
+        }
+    
+    tests['phone_validation'] = phone_results
+    
+    # Test 2: Price Calculations
+    price_test_cases = [
+        ('basic', 'weekly', None),
+        ('basic', 'monthly', None),
+        ('basic', 'quarterly', None),
+        ('growth', 'monthly', None),
+        ('pro', 'annual', None),
+        ('basic', 'custom', 3),
+        ('pro', 'custom', 6)
+    ]
+    
+    price_results = {}
+    for plan, duration, months in price_test_cases:
+        result, error = calculate_subscription_price(plan, duration, months)
+        price_results[f"{plan}_{duration}_{months}"] = {
+            'result': result,
+            'error': error,
+            'account_reference': generate_account_reference(plan, duration, months) if not error else 'N/A'
+        }
+    
+    tests['price_calculations'] = price_results
+    
+    # Test 3: Platform-specific default numbers
+    platform_tests = {}
+    test_cases = [
+        ('whatsapp:+254712345678', 'whatsapp'),
+        ('telegram:1657226784', 'telegram'),
+        ('whatsapp:0712345678', 'whatsapp')
+    ]
+    
+    for chat_phone, platform in test_cases:
+        default_num = get_default_payment_number(chat_phone, platform)
+        platform_tests[f"{platform}_{chat_phone}"] = {
+            'default_payment': default_num,
+            'requires_input': default_num is None
+        }
+    
+    tests['platform_defaults'] = platform_tests
+    
+    return jsonify({
+        'status': 'M-Pesa Core Functions Test',
+        'tests': tests,
+        'timestamp': datetime.now().isoformat()
+    })
 
 # === START ADD: COMPATIBLE API ROUTES ===
 
@@ -1052,7 +1463,6 @@ def get_telegram_help(user_profile):
 
 *Core Commands:*
 /start - Welcome message
-/ideas - Generate social media content
 /status - Check subscription status
 /profile - Manage business info
 /help - This message"""
@@ -1073,6 +1483,7 @@ def get_telegram_help(user_profile):
         
         else:
             help_message += "\n\n*Subscribe to unlock:*"
+            help_message += "\n• Generate social media marketing ideas/content"
             help_message += "\n• Business Q&A (/qstn)"
             help_message += "\n• Customer messages or email analysis (/4wd)" 
             help_message += "\n• Marketing strategies (/strat)"
