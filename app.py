@@ -915,7 +915,7 @@ def send_telegram_message(chat_id, text):
         print(f"❌ Telegram send error: {e}")
 
 def process_telegram_message(chat_id, incoming_msg):
-    """Process message using EXACT SAME logic as WhatsApp webhook"""
+    """Process message using EXACT SAME logic as WhatsApp webhook - FIXED VERSION"""
     phone_number = f"telegram:{chat_id}"
     user_profile = get_or_create_profile(phone_number)
     
@@ -924,9 +924,11 @@ def process_telegram_message(chat_id, incoming_msg):
     
     session = ensure_user_session(phone_number)
     
-    # ✅ PRIORITY: Handle exit/cancel commands first
+    print(f"🔍 TELEGRAM DEBUG: Processing '{incoming_msg}', session states: { {k: v for k, v in session.items() if v} }")
+    
+    # ✅ PRIORITY: Handle exit/cancel commands first - COMPREHENSIVE CLEANUP
     if incoming_msg.strip().lower() in ['exit', 'cancel', 'back', 'menu']:
-        # Clear all session states
+        # Clear ALL session states
         session.update({
             'onboarding': False,
             'awaiting_product_selection': False,
@@ -938,7 +940,10 @@ def process_telegram_message(chat_id, incoming_msg):
             'continue_data': None,
             'profile_step': None,
             'updating_field': None,
-            'editing_index': None
+            'editing_index': None,
+            'output_type': None,
+            'onboarding_step': 0,
+            'business_data': {}
         })
         return "Returning to main menu. Use /help to see available commands."
 
@@ -947,16 +952,22 @@ def process_telegram_message(chat_id, incoming_msg):
         print(f"🔧 TELEGRAM: In profile management, step={session.get('profile_step')}")
         profile_complete, response_message = handle_profile_management(phone_number, incoming_msg, user_profile)
         
+        # ✅ CRITICAL FIX: If profile management is complete, clear the state
         if profile_complete:
-            session['managing_profile'] = False
-            session['profile_step'] = None
-
+            session.update({
+                'managing_profile': False,
+                'profile_step': None,
+                'updating_field': None
+            })
+            
         print(f"🔧 TELEGRAM: Profile management response length: {len(response_message)}")
         return response_message
 
     # ✅ Handle onboarding if active
     if session.get('onboarding'):
         onboarding_complete, response_message = handle_onboarding_response(phone_number, incoming_msg, user_profile)
+        if onboarding_complete:
+            session['onboarding'] = False
         return response_message
 
     # ✅ Handle continue command
@@ -978,7 +989,15 @@ def process_telegram_message(chat_id, incoming_msg):
 
     # ✅ Handle command-based messages (starting with /)
     if incoming_msg.startswith('/'):
-        return handle_telegram_commands(phone_number, user_profile, incoming_msg[1:].lower())
+        command = incoming_msg[1:].lower().strip()
+        print(f"🔍 TELEGRAM COMMAND: Processing /{command}")
+        return handle_telegram_commands(phone_number, user_profile, command)
+    
+    # ✅ Handle regular commands without "/"
+    clean_msg = incoming_msg.lower().strip()
+    if clean_msg in ['ideas', 'strat', 'qstn', '4wd', 'profile', 'status', 'subscribe', 'help', 'trends', 'competitor']:
+        print(f"🔍 TELEGRAM COMMAND: Processing {clean_msg} without slash")
+        return handle_telegram_commands(phone_number, user_profile, clean_msg)
     
     # ✅ Handle session states for regular messages
     return handle_telegram_session_states(phone_number, user_profile, incoming_msg)
@@ -1228,8 +1247,10 @@ We're working on Telegram payments integration and will notify you when it's rea
 💎 PRO - KSh 599/month"""
 
 def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
-    """Handle Telegram session states for regular messages"""
+    """Handle Telegram session states for regular messages - FIXED VERSION"""
     session = ensure_user_session(phone_number)
+    
+    print(f"🔍 TELEGRAM SESSION STATES: Processing '{incoming_msg}', states: { {k: v for k, v in session.items() if v} }")
     
     # Handle QSTN question input
     if session.get('awaiting_qstn'):
@@ -1271,9 +1292,18 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
             }
             header = headers.get(output_type, "🎯 MARKETING CONTENT")
             return f"{header} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
+        else:
+            session['awaiting_product_selection'] = False
+            return "I didn't understand your product selection. Please use /ideas or /strat to try again."
     
-    # Default response for regular messages
-    return get_intelligent_response(incoming_msg, user_profile)
+    # Default response for regular messages - IMPROVED
+    business_context = ""
+    if user_profile.get('business_name'):
+        business_context = f" {user_profile['business_name']}"
+    
+    help_options = "Use /ideas for social media content, /strat for marketing strategies, /qstn for business advice, /4wd for customer message analysis, /status for subscription info, /profile to manage your business info, or /help for more options."
+    
+    return f"I'm here to help your{business_context} business with marketing! {help_options}"
 
 @app.route('/debug-telegram', methods=['GET'])
 def debug_telegram():
