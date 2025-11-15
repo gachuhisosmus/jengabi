@@ -35,9 +35,11 @@ TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}" if TELEGRAM_T
 # ===== MPESA CONFIGURATION =====
 MPESA_CONSUMER_KEY = os.getenv("MPESA_CONSUMER_KEY")
 MPESA_CONSUMER_SECRET = os.getenv("MPESA_CONSUMER_SECRET")
-MPESA_PASSKEY = os.getenv("MPESA_PASSKEY", "placeholder_passkey")
-MPESA_SHORTCODE = os.getenv("MPESA_SHORTCODE")
+MPESA_PASSKEY = os.getenv("MPESA_PASSKEY", "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919")
+MPESA_SHORTCODE = os.getenv("MPESA_SHORTCODE", "174379")
 MPESA_CALLBACK_URL = os.getenv("MPESA_CALLBACK_URL", "https://jengabi.onrender.com/mpesa-callback")
+
+MPESA_IS_SANDBOX = not MPESA_CONSUMER_KEY or MPESA_PASSKEY == "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919"
 
 # Root route
 @app.route('/')
@@ -146,6 +148,9 @@ def initiate_mpesa_payment(phone_number, amount, plan_type, account_reference):
         # Check if we're using sandbox or live credentials
         if MPESA_IS_SANDBOX:
             print("🟡 USING MPESA SANDBOX MODE")
+            test_amount = 1  # KES 1 for sandbox testing
+            print(f"🟡 SANDBOX MODE: Using test amount KES {test_amount} instead of KES {amount}")
+            amount = test_amount
             # Sandbox credentials
             consumer_key = "your_sandbox_consumer_key"
             consumer_secret = "your_sandbox_consumer_secret" 
@@ -994,6 +999,25 @@ MPESA_DURATIONS = {
         'mpesa_suffix': 'CUS'
     }
 }
+
+# Add this to your ENHANCED_PLANS or create a test override
+def get_test_plan_price(plan_type, duration_type, is_sandbox=True):
+    """Return test prices for sandbox, real prices for production"""
+    if is_sandbox:
+        # Sandbox test prices (KES 1 for testing)
+        test_prices = {
+            'basic': {'weekly': 1, 'monthly': 1},
+            'growth': {'weekly': 1, 'monthly': 1}, 
+            'pro': {'weekly': 1, 'monthly': 1}
+        }
+        return test_prices.get(plan_type, {}).get(duration_type, 1)
+    else:
+        # Real prices from ENHANCED_PLANS
+        plan = ENHANCED_PLANS[plan_type]
+        if duration_type == 'weekly':
+            return plan['weekly_price']
+        else:
+            return plan['monthly_price']
 
 # Payment status constants
 PAYMENT_STATUS = {
