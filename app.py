@@ -141,17 +141,32 @@ def get_mpesa_access_token():
         return None
 
 def initiate_mpesa_payment(phone_number, amount, plan_type, account_reference):
-    """Initiate M-Pesa STK Push payment with proper error handling"""
+    """Initiate M-Pesa STK Push payment with sandbox fallback"""
     try:
-        # Check if we have real credentials
-        if MPESA_PASSKEY == "placeholder_passkey" or not MPESA_PASSKEY:
-            return None, "M-Pesa credentials not configured. Please contact support."
+        # Check if we're using sandbox or live credentials
+        if MPESA_IS_SANDBOX:
+            print("🟡 USING MPESA SANDBOX MODE")
+            # Sandbox credentials
+            consumer_key = "your_sandbox_consumer_key"
+            consumer_secret = "your_sandbox_consumer_secret" 
+            shortcode = "174379"
+            passkey = "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919"
+            base_url = "https://sandbox.safaricom.co.ke"
+        else:
+            print("🟢 USING MPESA LIVE MODE")
+            # Live credentials from environment
+            consumer_key = MPESA_CONSUMER_KEY
+            consumer_secret = MPESA_CONSUMER_SECRET
+            shortcode = MPESA_SHORTCODE
+            passkey = MPESA_PASSKEY
+            base_url = "https://api.safaricom.co.ke"
         
-        access_token = get_mpesa_access_token()
+        # Get access token
+        access_token = get_mpesa_access_token_sandbox(consumer_key, consumer_secret, base_url)
         if not access_token:
             return None, "Failed to get M-Pesa access token. Please try again."
         
-        # Format phone number (2547...)
+        # Format phone number
         if phone_number.startswith('0'):
             phone_number = '254' + phone_number[1:]
         elif phone_number.startswith('+254'):
@@ -168,16 +183,16 @@ def initiate_mpesa_payment(phone_number, amount, plan_type, account_reference):
         # M-Pesa API parameters
         import datetime
         timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
-        password = base64.b64encode(f"{MPESA_SHORTCODE}{MPESA_PASSKEY}{timestamp}".encode()).decode()
+        password = base64.b64encode(f"{shortcode}{passkey}{timestamp}".encode()).decode()
         
         payload = {
-            "BusinessShortCode": MPESA_SHORTCODE,
+            "BusinessShortCode": shortcode,
             "Password": password,
             "Timestamp": timestamp,
             "TransactionType": "CustomerPayBillOnline",
-            "Amount": int(amount),  # Ensure integer
+            "Amount": int(amount),
             "PartyA": phone_number,
-            "PartyB": MPESA_SHORTCODE,
+            "PartyB": shortcode,
             "PhoneNumber": phone_number,
             "CallBackURL": MPESA_CALLBACK_URL,
             "AccountReference": account_reference,
@@ -189,9 +204,10 @@ def initiate_mpesa_payment(phone_number, amount, plan_type, account_reference):
             "Content-Type": "application/json"
         }
         
-        url = "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
+        url = f"{base_url}/mpesa/stkpush/v1/processrequest"
         
         print(f"🔄 Initiating M-Pesa payment: {phone_number}, Amount: {amount}, Plan: {plan_type}")
+        print(f"📱 Using URL: {url}")
         
         response = requests.post(url, json=payload, headers=headers, timeout=30)
         
@@ -213,7 +229,27 @@ def initiate_mpesa_payment(phone_number, amount, plan_type, account_reference):
             
     except Exception as e:
         print(f"❌ M-Pesa payment initiation error: {e}")
+        import traceback
+        print(f"❌ Full traceback: {traceback.format_exc()}")
         return None, f"Payment initiation failed: {str(e)}"
+
+def get_mpesa_access_token_sandbox(consumer_key, consumer_secret, base_url):
+    """Get M-Pesa API access token for sandbox or live"""
+    try:
+        url = f"{base_url}/oauth/v1/generate?grant_type=client_credentials"
+        response = requests.get(
+            url,
+            auth=(consumer_key, consumer_secret),
+            timeout=30
+        )
+        if response.status_code == 200:
+            return response.json()['access_token']
+        else:
+            print(f"❌ M-Pesa token error: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        print(f"❌ M-Pesa token exception: {e}")
+        return None
 
 def activate_subscription(phone_number, plan_type, mpesa_receipt=None, amount=None):
     """Activate user subscription after successful payment"""
