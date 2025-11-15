@@ -148,9 +148,9 @@ def initiate_mpesa_payment(phone_number, amount, plan_type, account_reference):
         # Check if we're using sandbox or live credentials
         if MPESA_IS_SANDBOX:
             print("🟡 USING MPESA SANDBOX MODE")
-            test_amount = 1  # KES 1 for sandbox testing
-            print(f"🟡 SANDBOX MODE: Using test amount KES {test_amount} instead of KES {amount}")
-            amount = test_amount
+            # test_amount = 1  # KES 1 for sandbox testing
+            # print(f"🟡 SANDBOX MODE: Using test amount KES {test_amount} instead of KES {amount}")
+            # amount = test_amount
             # Sandbox credentials
             consumer_key = "your_sandbox_consumer_key"
             consumer_secret = "your_sandbox_consumer_secret" 
