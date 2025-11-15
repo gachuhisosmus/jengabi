@@ -542,6 +542,245 @@ def get_current_subscription_flow(session):
     """Get current subscription flow"""
     return session.get('mpesa_subscription_flow')
 
+# ===== MPESA SUBSCRIPTION FLOW HANDLERS =====
+
+def handle_subscription_plan_selection(phone_number, user_input, session):
+    """Handle plan selection in subscription flow"""
+    plan_choices = {
+        '1': 'basic',
+        '2': 'growth', 
+        '3': 'pro'
+    }
+    
+    if user_input not in plan_choices:
+        return "Please choose a valid plan (1, 2, or 3):"
+    
+    selected_plan = plan_choices[user_input]
+    session['mpesa_subscription_flow']['selected_plan'] = selected_plan
+    session['mpesa_subscription_flow']['step'] = 'duration_selection'
+    
+    plan = ENHANCED_PLANS[selected_plan]
+    
+    return f"""🕒 *CHOOSE SUBSCRIPTION DURATION:*
+
+For *{selected_plan.upper()}* Plan:
+
+1. ⏳ *1 Week* - KSh {plan['weekly_price']}
+2. 📅 *1 Month* - KSh {plan['monthly_price']}  
+3. 🗓️ *3 Months* - KSh {calculate_subscription_price(selected_plan, 'quarterly', None)[0]['final_amount']} (Save 10%)
+4. 📆 *6 Months* - KSh {calculate_subscription_price(selected_plan, 'biannual', None)[0]['final_amount']} (Save 15%)
+5. 🎊 *12 Months* - KSh {calculate_subscription_price(selected_plan, 'annual', None)[0]['final_amount']} (Save 20%)
+6. 🔢 *Custom Months* (2-11) - 5% discount
+
+Reply with *1-6*:"""
+
+def handle_subscription_duration_selection(phone_number, user_input, session):
+    """Handle duration selection in subscription flow"""
+    duration_choices = {
+        '1': 'weekly',
+        '2': 'monthly',
+        '3': 'quarterly', 
+        '4': 'biannual',
+        '5': 'annual',
+        '6': 'custom'
+    }
+    
+    if user_input not in duration_choices:
+        return "Please choose a valid duration (1-6):"
+    
+    selected_duration = duration_choices[user_input]
+    session['mpesa_subscription_flow']['selected_duration'] = selected_duration
+    
+    if selected_duration == 'custom':
+        session['mpesa_subscription_flow']['step'] = 'custom_months'
+        return "🔢 *CUSTOM DURATION:*\n\nHow many months? (2-11 months)\n\n5% discount applied.\n\nEnter number of months:"
+    else:
+        session['mpesa_subscription_flow']['step'] = 'payment_number'
+        return handle_payment_number_step(phone_number, session)
+
+def handle_custom_months_selection(phone_number, user_input, session):
+    """Handle custom months selection"""
+    try:
+        months = int(user_input)
+        if months < 2 or months > 11:
+            return "Please enter a number between 2 and 11:"
+        
+        session['mpesa_subscription_flow']['custom_months'] = months
+        session['mpesa_subscription_flow']['step'] = 'payment_number'
+        
+        return handle_payment_number_step(phone_number, session)
+        
+    except ValueError:
+        return "Please enter a valid number (2-11):"
+
+def handle_payment_number_step(phone_number, session):
+    """Handle payment number collection step"""
+    flow_data = session['mpesa_subscription_flow']
+    platform = flow_data['platform']
+    
+    # Calculate price for display
+    price_result, error = calculate_subscription_price(
+        flow_data['selected_plan'],
+        flow_data['selected_duration'], 
+        flow_data.get('custom_months')
+    )
+    
+    if error:
+        return f"❌ Error calculating price: {error}"
+    
+    session['mpesa_subscription_flow']['calculated_price'] = price_result['final_amount']
+    session['mpesa_subscription_flow']['duration_days'] = price_result['duration_days']
+    session['mpesa_subscription_flow']['original_amount'] = price_result['original_amount']
+    session['mpesa_subscription_flow']['discount_percent'] = price_result['discount_percent']
+    
+    # Generate account reference
+    account_ref = generate_account_reference(
+        flow_data['selected_plan'],
+        flow_data['selected_duration'],
+        flow_data.get('custom_months')
+    )
+    session['mpesa_subscription_flow']['mpesa_account_reference'] = account_ref
+    
+    if platform == 'whatsapp' and flow_data['payment_phone_number']:
+        # WhatsApp with existing number
+        display_phone = format_phone_for_display(flow_data['payment_phone_number'])
+        return f"""📱 *PAYMENT PHONE NUMBER*
+
+We'll send M-Pesa prompt to:
+• {display_phone} (your WhatsApp number)
+
+💡 Need to use a different number?
+Reply with the alternative number (format: 0712345678)
+
+Or reply *'SAME'* to use current number:
+
+*Plan Summary:*
+• Plan: {flow_data['selected_plan'].upper()}
+• Duration: {flow_data['selected_duration']}
+• Amount: KSh {price_result['final_amount']}"""
+    else:
+        # Telegram or WhatsApp without number
+        return f"""📱 *PAYMENT PHONE NUMBER*
+
+Please provide your M-Pesa phone number:
+
+Format: *0712345678* or *254712345678*
+
+We'll send payment prompt to this number.
+
+*Plan Summary:*
+• Plan: {flow_data['selected_plan'].upper()}
+• Duration: {flow_data['selected_duration']}
+• Amount: KSh {price_result['final_amount']}"""
+
+def handle_payment_number_input(phone_number, user_input, session):
+    """Process payment number input"""
+    flow_data = session['mpesa_subscription_flow']
+    
+    if user_input.strip().upper() == 'SAME':
+        # Use existing number (WhatsApp only)
+        if flow_data['payment_phone_number']:
+            session['mpesa_subscription_flow']['payment_number_provided'] = True
+            session['mpesa_subscription_flow']['step'] = 'payment_confirmation'
+            return handle_payment_confirmation(phone_number, session)
+        else:
+            return "No existing number found. Please provide your M-Pesa number:"
+    
+    # Validate provided number
+    is_valid, formatted_phone, message = validate_kenyan_phone_number(user_input)
+    if not is_valid:
+        return f"❌ {message}\n\nPlease provide a valid Kenyan number (0712345678):"
+    
+    session['mpesa_subscription_flow']['payment_phone_number'] = formatted_phone
+    session['mpesa_subscription_flow']['payment_number_provided'] = True
+    session['mpesa_subscription_flow']['step'] = 'payment_confirmation'
+    
+    return handle_payment_confirmation(phone_number, session)
+
+def handle_payment_confirmation(phone_number, session):
+    """Show payment confirmation and initiate M-Pesa"""
+    flow_data = session['mpesa_subscription_flow']
+    
+    # Calculate final details
+    price_result, error = calculate_subscription_price(
+        flow_data['selected_plan'],
+        flow_data['selected_duration'],
+        flow_data.get('custom_months')
+    )
+    
+    if error:
+        return f"❌ Error: {error}"
+    
+    display_phone = format_phone_for_display(flow_data['payment_phone_number'])
+    duration_display = get_duration_display(
+        flow_data['selected_duration'], 
+        flow_data.get('custom_months')
+    )
+    
+    # Initiate M-Pesa payment
+    checkout_id, message = initiate_mpesa_payment(
+        flow_data['payment_phone_number'],
+        price_result['final_amount'],
+        flow_data['selected_plan'],
+        flow_data['mpesa_account_reference']
+    )
+    
+    if checkout_id:
+        session['mpesa_subscription_flow']['mpesa_checkout_id'] = checkout_id
+        session['mpesa_subscription_flow']['payment_status'] = 'processing'
+        
+        return f"""💳 *M-PESA PAYMENT INITIATED*
+
+✅ Payment request sent successfully!
+
+*Plan:* {flow_data['selected_plan'].upper()} {duration_display}
+*Amount:* KSh {price_result['final_amount']}
+*Phone:* {display_phone}
+*Reference:* {flow_data['mpesa_account_reference']}
+
+📱 *Check your phone for M-Pesa prompt...*
+
+🔄 Payment processing automatically. You'll receive confirmation shortly.
+
+💡 Keep this phone nearby to confirm payment."""
+    else:
+        # Manual payment instructions
+        return f"""💳 *MANUAL PAYMENT REQUIRED*
+
+{message}
+
+*To complete your subscription:*
+
+1. 🏦 Go to *M-Pesa*
+2. 📤 Select *"Pay Bill"*
+3. 🏢 Business No: *{MPESA_SHORTCODE}*
+4. 📝 Account No: *{flow_data['mpesa_account_reference']}*
+5. 💰 Amount: *KSh {price_result['final_amount']}*
+6. ✅ Enter your *M-Pesa PIN*
+
+*Plan Details:*
+• {flow_data['selected_plan'].upper()} - {duration_display}
+• Phone: {display_phone}
+
+After payment, forward the confirmation message to me for activation!"""
+
+def get_duration_display(duration_type, custom_months=None):
+    """Get user-friendly duration display"""
+    if duration_type == 'weekly':
+        return "(1 Week)"
+    elif duration_type == 'monthly':
+        return "(1 Month)"
+    elif duration_type == 'quarterly':
+        return "(3 Months)" 
+    elif duration_type == 'biannual':
+        return "(6 Months)"
+    elif duration_type == 'annual':
+        return "(12 Months)"
+    elif duration_type == 'custom' and custom_months:
+        return f"({custom_months} Months)"
+    else:
+        return ""
+
 # ===== ENHANCED MPESA SUBSCRIPTION ACTIVATION =====
 
 def activate_enhanced_subscription(chat_phone, payment_data, subscription_data):
@@ -696,6 +935,15 @@ MPESA_DURATIONS = {
         'discount': 5,
         'mpesa_suffix': 'CUS'
     }
+}
+
+# Payment status constants
+PAYMENT_STATUS = {
+    'PENDING': 'pending',
+    'PROCESSING': 'processing', 
+    'COMPLETED': 'completed',
+    'FAILED': 'failed',
+    'CANCELLED': 'cancelled'
 }
 
 # Payment status constants
@@ -1483,7 +1731,7 @@ def get_telegram_help(user_profile):
         
         else:
             help_message += "\n\n*Subscribe to unlock:*"
-            help_message += "\n• Generate social media marketing ideas/content"
+            help_message += "\n• Generate social media marketing ideas/content (/ideas)"
             help_message += "\n• Business Q&A (/qstn)"
             help_message += "\n• Customer messages or email analysis (/4wd)" 
             help_message += "\n• Marketing strategies (/strat)"
@@ -1553,7 +1801,7 @@ Ready to grow your business? 🚀"""
         return get_telegram_status(user_profile)
     
     elif command == 'subscribe':
-        return handle_telegram_subscribe_command(user_profile)
+        return handle_telegram_subscribe_command(phone_number, user_profile)
     
     elif command == 'help':
         return get_telegram_help(user_profile)
@@ -1639,23 +1887,32 @@ Forward or paste a customer message you'd like me to analyze. I'll provide:
 
 Paste or forward the customer message now:"""
 
-def handle_telegram_subscribe_command(user_profile):
-    """Handle Telegram subscribe command"""
+def handle_telegram_subscribe_command(phone_number, user_profile):
+    """Handle Telegram subscribe command - ENHANCED MPESA VERSION"""
     if not user_profile.get('profile_complete'):
         return "Please complete your business profile first using the /profile command."
     
-    return """💳 *SUBSCRIBE TO JENGABI YOUR BUSINESS INTELIGENCE ASSISTANT*
+    # Initialize M-Pesa subscription flow
+    session = initialize_mpesa_subscription_flow(phone_number, 'telegram')
+    
+    return """💳 *SUBSCRIBE TO JENGABI*
 
-To subscribe, please use our WhatsApp bot for now:
+Choose your plan:
 
-📱 *WhatsApp:* +14155238886
+1. 🎯 *BASIC* - KSh 130/month or KSh 50/week
+   • 5 social media ideas per week
+   • Business Q&A + Customer message analysis
 
-We're working on Telegram payments integration and will notify you when it's ready!
+2. 🚀 *GROWTH* - KSh 249/month or KSh 80/week  
+   • 15 ideas + Marketing strategies
+   • All Basic features
 
-*Available Plans:*
-🎯 BASIC - KSh 130/month
-🚀 GROWTH - KSh 249/month  
-💎 PRO - KSh 599/month"""
+3. 💎 *PRO* - KSh 599/month or KSh 150/week
+   • Unlimited ideas + Advanced strategies
+   • Real-time trends + Competitor insights
+   • All Growth features
+
+Reply with *1*, *2*, or *3*:"""
 
 def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
     """Handle Telegram session states for regular messages - FIXED VERSION"""
@@ -1707,13 +1964,29 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
             session['awaiting_product_selection'] = False
             return "I didn't understand your product selection. Please use /ideas or /strat to try again."
     
-    # Default response for regular messages - IMPROVED
+    # ✅ Handle M-Pesa subscription flow
+        flow_data = get_current_subscription_flow(session)
+        if flow_data:
+           current_step = flow_data['step']
+    
+    if current_step == 'plan_selection':
+        return handle_subscription_plan_selection(phone_number, incoming_msg, session)
+    elif current_step == 'duration_selection':
+        return handle_subscription_duration_selection(phone_number, incoming_msg, session)
+    elif current_step == 'custom_months':
+        return handle_custom_months_selection(phone_number, incoming_msg, session)
+    elif current_step == 'payment_number':
+        return handle_payment_number_input(phone_number, incoming_msg, session)
+    elif current_step == 'payment_confirmation':
+        # Payment already initiated, just show status
+        return "🔄 Payment processing... Check your phone for M-Pesa prompt."
+
+# Default response for regular messages - IMPROVED
     business_context = ""
     if user_profile.get('business_name'):
         business_context = f" {user_profile['business_name']}"
-    
-    help_options = "Use /ideas for social media content, /strat for marketing strategies, /qstn for business advice, /4wd for customer message analysis, /status for subscription info, /profile to manage your business info, or /help for more options."
-    
+
+    help_options = "Use /ideas for social media content, /strat for marketing strategies, /qstn for business advice, /4wd for customer message analysis, /status for subscription info, /subscribe to choose a plan, /profile to manage your business info, or /help for more options."
     return f"I'm here to help your{business_context} business with marketing! {help_options}"
 
 @app.route('/debug-telegram', methods=['GET'])
@@ -4039,28 +4312,33 @@ Paste or forward the customer message now:""")
             resp.message("Please complete your business profile first using the 'profile' command.")
             return str(resp)
     
-        plan_selection_message = """*Choose your monthly plan:*
+    
+    
+    # Initialize M-Pesa subscription flow for WhatsApp
+    session = initialize_mpesa_subscription_flow(phone_number, 'whatsapp')
+    
+    plan_selection_message = """💳 *SUBSCRIBE TO JENGABI*
 
-*🎯 BASIC - KSh 130/month*
-• 5 social media ideas per week
-• Business Q&A (*'qstn'*)
-• Customer message analysis (*'4wd'*)
+Choose your plan:
 
-*🚀 GROWTH - KSh 249/month*  
-• 15 ideas + marketing strategies (*'strat'*)
-• All Basic features
+1. 🎯 *BASIC* - KSh 130/month or KSh 50/week
+   • 5 social media ideas per week
+   • Business Q&A + Customer message analysis
 
-*💎 PRO - KSh 599/month*
-• Unlimited ideas + advanced strategies
-• Real-time trends (*'trends'*)
-• Competitor analysis (*'competitor'*)
-• All Growth features
+2. 🚀 *GROWTH* - KSh 249/month or KSh 80/week  
+   • 15 ideas + Marketing strategies
+   • All Basic features
 
-Reply with *'Basic'*, *'Growth'*, or *'Pro'* to pay via M-Pesa."""
-        
-        session['awaiting_plan_selection'] = True
-        resp.message(plan_selection_message)
-        return str(resp)     
+3. 💎 *PRO* - KSh 599/month or KSh 150/week
+   • Unlimited ideas + Advanced strategies
+   • Real-time trends + Competitor insights
+   • All Growth features
+
+Reply with *1* for *Basic*, *2* for *Growth*, or *3* for *Pro*:"""
+    
+    session['awaiting_plan_selection'] = True
+    resp.message(plan_selection_message)
+    return str(resp)     
     
         # ===== PLAN SELECTION HANDLING =====
     if session.get('awaiting_plan_selection'):
