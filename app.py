@@ -1557,51 +1557,49 @@ def mpesa_callback():
             print(f"✅ PAYMENT SUCCESS: {mpesa_receipt} - KSh {amount} from {phone_number}")
             
             # Find the user session with this checkout ID
+            # ✅ NEW CODE: Find checkout session from database
             user_found = False
-            for chat_phone, session_data in user_sessions.items():
-                mpesa_flow = session_data.get('mpesa_subscription_flow')
-                if mpesa_flow and mpesa_flow.get('mpesa_checkout_id') == checkout_request_id:
-                    # Found the user session
-                    selected_plan = mpesa_flow.get('selected_plan', 'basic')
-                    selected_duration = mpesa_flow.get('selected_duration', 'monthly')
-                    account_reference = mpesa_flow.get('mpesa_account_reference', '')
-                    
-                    # Prepare subscription data
-                    subscription_data = {
-                        'plan_type': selected_plan,
-                        'duration_type': selected_duration,
-                        'duration_days': MPESA_DURATIONS[selected_duration]['duration_days'],
-                        'original_amount': mpesa_flow.get('original_amount', amount),
-                        'discount_percent': mpesa_flow.get('discount_percent', 0),
-                        'account_reference': account_reference
-                    }
-                    
-                    # Prepare payment data
-                    enhanced_payment_data = {
-                        'checkout_request_id': checkout_request_id,
-                        'mpesa_receipt': mpesa_receipt,
-                        'phone_number': phone_number,
-                        'amount': amount,
-                        'transaction_date': transaction_date
-                    }
-                    
-                    # Activate subscription
-                    if activate_enhanced_subscription(chat_phone, enhanced_payment_data, subscription_data):
-                        print(f"✅ SUBSCRIPTION ACTIVATED for {chat_phone}")
-                        # Clear the M-Pesa flow
+            checkout_session = find_checkout_session(checkout_request_id)
+
+            if checkout_session:
+                chat_phone = checkout_session['user_phone']
+                session_data = ensure_user_session(chat_phone)
+    
+                # Prepare subscription data from stored session
+                subscription_data = {
+                    'plan_type': checkout_session['selected_plan'],
+                    'duration_type': checkout_session['selected_duration'],
+                    'duration_days': MPESA_DURATIONS[checkout_session['selected_duration']]['duration_days'],
+                    'original_amount': float(checkout_session['amount']),
+                    'discount_percent': 0,
+                    'account_reference': checkout_session['account_reference']
+                }
+    
+                # Prepare payment data
+                enhanced_payment_data = {
+                    'checkout_request_id': checkout_request_id,
+                    'mpesa_receipt': mpesa_receipt,
+                    'phone_number': phone_number,
+                    'amount': amount,
+                    'transaction_date': transaction_date
+                }
+    
+                # Activate subscription
+                if activate_enhanced_subscription(chat_phone, enhanced_payment_data, subscription_data):
+                    print(f"✅ SUBSCRIPTION ACTIVATED for {chat_phone}")
+        
+                    # Clear the M-Pesa flow from session
+                    if 'mpesa_subscription_flow' in session_data:
                         clear_mpesa_subscription_flow(session_data)
-                        user_found = True
-                    break
+        
+                    # Delete the used checkout session
+                    try:
+                       supabase.table('checkout_sessions').delete().eq('checkout_request_id', checkout_request_id).execute()
+                    except Exception as e:
+                        print(f"⚠️ Error deleting checkout session: {e}")
+        
+                    user_found = True
             
-            if not user_found:
-                print(f"⚠️ Could not find user session for checkout ID: {checkout_request_id}")
-        
-        else:
-            error_msg = callback_data.get('ResultDesc', 'Unknown error')
-            print(f"❌ PAYMENT FAILED: {error_msg}")
-        
-        return jsonify({"ResultCode": 0, "ResultDesc": "Success"})
-        
     except Exception as e:
         print(f"❌ MPESA CALLBACK ERROR: {e}")
         import traceback
@@ -2171,6 +2169,18 @@ Reply 'PAY' to initiate M-Pesa payment or 'CANCEL' to abort."""
                     session['mpesa_subscription_flow']['mpesa_checkout_id'] = checkout_id
                     session['mpesa_subscription_flow']['step'] = 'awaiting_payment'
                     session['mpesa_subscription_flow']['mpesa_account_reference'] = account_ref
+
+                    store_checkout_session(
+                        checkout_id, 
+                        session['mpesa_subscription_flow'],
+                        {
+                            'selected_plan': plan_type,
+                            'selected_duration': duration_type,
+                            'final_amount': amount,
+                            'mpesa_account_reference': account_ref
+                        }
+                    )
+
                     return f"💳 M-Pesa STK Push sent to {format_phone_for_display(payment_phone)}!\n\nCheck your phone for M-Pesa prompt to complete payment of KSh {amount}.\n\nI'll notify you when payment is confirmed. ✅"
                 else:
                     return f"❌ Payment initiation failed: {message}\n\nPlease try again or contact support."
@@ -4019,6 +4029,63 @@ def get_full_profile_summary(user_profile):
 📈 Profile Status: {'✅ Complete' if user_profile.get('profile_complete') else '❌ Incomplete'}
 """
 
+# ===== CHECKOUT SESSION MANAGEMENT =====
+
+def store_checkout_session(checkout_id, user_data, subscription_data):
+    """Store checkout session in database to prevent timeout issues"""
+    try:
+        # Find user profile
+        response = supabase.table('profiles').select('*').eq('phone_number', user_data['current_chat_phone']).execute()
+        if not response.data:
+            print(f"❌ User not found for phone: {user_data['current_chat_phone']}")
+            return False
+        
+        profile_id = response.data[0]['id']
+        
+        session_record = {
+            'checkout_request_id': checkout_id,
+            'user_phone': user_data['current_chat_phone'],
+            'profile_id': profile_id,
+            'selected_plan': subscription_data['selected_plan'],
+            'selected_duration': subscription_data['selected_duration'],
+            'amount': subscription_data['final_amount'],
+            'account_reference': subscription_data.get('mpesa_account_reference', ''),
+            'expires_at': (datetime.now() + timedelta(hours=24)).isoformat()
+        }
+        
+        supabase.table('checkout_sessions').insert(session_record).execute()
+        print(f"✅ Checkout session stored: {checkout_id} for {user_data['current_chat_phone']}")
+        return True
+    except Exception as e:
+        print(f"❌ Error storing checkout session: {e}")
+        return False
+
+def find_checkout_session(checkout_id):
+    """Find checkout session from database"""
+    try:
+        response = supabase.table('checkout_sessions')\
+            .select('*')\
+            .eq('checkout_request_id', checkout_id)\
+            .execute()
+        
+        if response.data:
+            return response.data[0]
+        return None
+    except Exception as e:
+        print(f"❌ Error finding checkout session: {e}")
+        return None
+
+def cleanup_expired_sessions():
+    """Clean up expired checkout sessions"""
+    try:
+        supabase.table('checkout_sessions')\
+            .delete()\
+            .lt('expires_at', datetime.now().isoformat())\
+            .execute()
+        print("✅ Expired checkout sessions cleaned up")
+    except Exception as e:
+        print(f"❌ Error cleaning up sessions: {e}")
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Handle both WhatsApp and Telegram"""
@@ -4726,6 +4793,11 @@ I'm here to help your business with social media marketing!"""
         resp.message("Hello! I'm here to help your business. Reply *'help'* to see available commands.")
     
     return str(resp)
+
+try:
+    cleanup_expired_sessions()
+except Exception as e:
+    print(f"⚠️ Startup cleanup failed: {e}")
 
 if __name__ == '__main__':
     print("🚀 Starting JengaBIBOT Server...")
