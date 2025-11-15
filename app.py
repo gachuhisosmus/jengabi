@@ -4525,68 +4525,7 @@ Reply with *1* for *Basic*, *2* for *Growth*, or *3* for *Pro*:"""
     return str(resp)     
     
         # ===== PLAN SELECTION HANDLING =====
-    if session.get('awaiting_plan_selection'):
-        plan_choice = incoming_msg.strip().lower()
-        if plan_choice in ['basic', 'growth', 'pro']:
-            session['awaiting_plan_selection'] = False
-            
-            plan_data = PLANS[plan_choice]
-            amount = plan_data['price']
-            
-            # Initiate M-Pesa payment
-            checkout_id, message = initiate_mpesa_payment(
-                phone_number, 
-                amount, 
-                plan_choice,
-                f"JengaBI{plan_choice.capitalize()}"
-            )
-            
-            if message == "manual":
-                # Manual payment instructions
-                clean_phone = phone_number.replace('whatsapp:+', '').replace('telegram:', '')
-                resp.message(f"""💳 MANUAL PAYMENT INSTRUCTIONS:
 
-To activate your {plan_choice.upper()} Plan:
-
-1. 🏦 Go to M-Pesa
-2. 📤 Select "Pay Bill" 
-3. 🏢 Business No: *{MPESA_SHORTCODE}*
-4. 📝 Account No: *{clean_phone}*
-5. 💰 Amount: *KSh {amount}*
-6. ✅ Enter your M-Pesa PIN
-
-After payment, *forward the confirmation message* to me for automatic activation.
-
-*Plan Benefits:*
-{plan_data['description']}""")
-            
-            elif checkout_id:
-                resp.message(f"""💳 PAYMENT INITIATED
-
-{message}
-
-📱 Check your phone for M-Pesa prompt to complete payment.
-
-Once payment is confirmed, your {plan_choice.upper()} plan will be activated automatically.""")
-            
-            else:
-                clean_phone = phone_number.replace('whatsapp:+', '').replace('telegram:', '')
-                resp.message(f"""❌ AUTOMATIC PAYMENT FAILED
-
-{message}
-
-💳 *MANUAL PAYMENT INSTRUCTIONS:*
-
-1. Pay Bill: *{MPESA_SHORTCODE}*
-2. Account: *{clean_phone}*  
-3. Amount: *KSh {amount}*
-
-Forward the confirmation message to me.""")
-        
-        else:
-            resp.message("Please reply with 'Basic', 'Growth', or 'Pro' to continue.")
-        
-        return str(resp)
 
     # ===== MANUAL MPESA CONFIRMATION HANDLING =====
     # Check if message looks like M-Pesa confirmation
