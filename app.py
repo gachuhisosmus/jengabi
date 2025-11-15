@@ -152,8 +152,8 @@ def initiate_mpesa_payment(phone_number, amount, plan_type, account_reference):
             # print(f"🟡 SANDBOX MODE: Using test amount KES {test_amount} instead of KES {amount}")
             # amount = test_amount
             # Sandbox credentials
-            consumer_key = "MPESA_CONSUMER_KEY"
-            consumer_secret = "MPESA_CONSUMER_SECRET" 
+            consumer_key = MPESA_CONSUMER_KEY
+            consumer_secret = MPESA_CONSUMER_SECRET 
             shortcode = "174379"
             passkey = "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919"
             base_url = "https://sandbox.safaricom.co.ke"
