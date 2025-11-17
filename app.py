@@ -2054,14 +2054,14 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
                 session['mpesa_subscription_flow']['step'] = 'duration_selection'
                 
                 plan_info = ENHANCED_PLANS[selected_plan]
-                return f"""✅ Selected {selected_plan.upper()} Plan: {plan_info['description']}
+                return f"""✅ Selected *{selected_plan.upper()} Plan: {plan_info['description']}*
 
-Now choose duration:
-1. 📅 Weekly - KSh {plan_info['weekly_price']}
-2. 📅 Monthly - KSh {plan_info['monthly_price']} 
-3. 📅 Quarterly - KSh {round(plan_info['monthly_price'] * 3 * 0.9)} (10% off)
-4. 📅 Annual - KSh {round(plan_info['monthly_price'] * 12 * 0.8)} (20% off)
-5. 📅 Custom (2-11 months) - 5% discount
+*Now choose duration:*
+1. 📅 *Weekly* - KSh {plan_info['weekly_price']}
+2. 📅 *Monthly* - KSh {plan_info['monthly_price']} 
+3. 📅 *Quarterly* - KSh {round(plan_info['monthly_price'] * 3 * 0.9)} (10% off)
+4. 📅 *Annual* - KSh {round(plan_info['monthly_price'] * 12 * 0.8)} (20% off)
+5. 📅 *Custom* (2-11 months) - 5% discount
 
 Reply with number (1-5):"""
             else:
@@ -2094,15 +2094,15 @@ How many months would you like to subscribe for?"""
                 session['mpesa_subscription_flow'].update(price_info)
                 session['mpesa_subscription_flow']['step'] = 'phone_input'
                 
-                return f"""📋 SUBSCRIPTION SUMMARY:
+                return f"""📋 *SUBSCRIPTION SUMMARY:*
 
-Plan: {selected_plan.upper()}
-Duration: {selected_duration.title()}
-Amount: KSh {price_info['final_amount']}
+*Plan:* {selected_plan.upper()}
+*Duration:* {selected_duration.title()}
+*Amount:* KSh {price_info['final_amount']}
 
-💳 Enter M-Pesa phone number for payment (e.g., 0712345678):
+💳 Enter M-Pesa phone number for payment *(e.g., 0712345678)*:
 • This can be different from your registered number
-• You'll receive STK push on this number"""
+• You'll *receive STK push on this number*"""
             else:
                 return "Please select a valid duration (1, 2, 3, 4, or 5)"
             
@@ -2122,15 +2122,15 @@ Amount: KSh {price_info['final_amount']}
                     session['mpesa_subscription_flow'].update(price_info)
                     session['mpesa_subscription_flow']['step'] = 'phone_input'
                     
-                    return f"""📋 SUBSCRIPTION SUMMARY:
+                    return f"""📋 *SUBSCRIPTION SUMMARY:*
 
-Plan: {selected_plan.upper()}
-Duration: {custom_months} Months (Custom)
-Original: KSh {price_info['original_amount']}
-Discount: {price_info['discount_percent']}%
-Final Amount: KSh {price_info['final_amount']}
+*Plan:* {selected_plan.upper()}
+*Duration:* {custom_months} Months (Custom)
+*Original:* KSh {price_info['original_amount']}
+*Discount:* {price_info['discount_percent']}%
+*Final Amount:* KSh {price_info['final_amount']}
 
-💳 Enter M-Pesa phone number for payment (e.g., 0712345678):
+💳 Enter M-Pesa phone number for payment *(e.g., 0712345678)*:
 • This can be different from your registered number
 • You'll receive STK push on this number"""
                 else:
@@ -2150,14 +2150,14 @@ Final Amount: KSh {price_info['final_amount']}
                 selected_duration = session['mpesa_subscription_flow']['selected_duration']
                 amount = session['mpesa_subscription_flow']['final_amount']
                 
-                return f"""✅ Payment number set: {format_phone_for_display(formatted_phone)}
+                return f"""✅ Payment number set: *{format_phone_for_display(formatted_phone)}*
 
-📋 FINAL CONFIRMATION:
-Plan: {selected_plan.upper()} - {selected_duration.title()}
-Amount: KSh {amount}
-Phone: {format_phone_for_display(formatted_phone)}
+📋 *FINAL CONFIRMATION:*
+*Plan:* {selected_plan.upper()} - {selected_duration.title()}
+*Amount:* KSh {amount}
+*Phone:* {format_phone_for_display(formatted_phone)}
 
-Reply 'PAY' to initiate M-Pesa payment or 'CANCEL' to abort."""
+Reply *'PAY'* to initiate M-Pesa payment or *'CANCEL'* to abort."""
             else:
                 return f"❌ Invalid phone number: {message}\n\nPlease enter a valid M-Pesa number (e.g., 0712345678):"
         
