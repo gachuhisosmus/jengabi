@@ -591,7 +591,10 @@ def update_subscription_flow_step(session, step, data=None):
 def clear_mpesa_subscription_flow(session):
     """Clear M-Pesa subscription flow"""
     if 'mpesa_subscription_flow' in session:
+        print(f"🔄 CLEARING MPESA FLOW: {session['mpesa_subscription_flow'].get('step')}")
         del session['mpesa_subscription_flow']
+        session.modified = True
+    return True
 
 def get_current_subscription_flow(session):
     """Get current subscription flow"""
@@ -2030,6 +2033,12 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
     session = ensure_user_session(phone_number)
     
     print(f"🔍 TELEGRAM SESSION STATES: Processing '{incoming_msg}', states: { {k: v for k, v in session.items() if v} }")
+
+    # ✅ Force clear stuck M-Pesa sessions for certain commands
+    if incoming_msg.strip().lower() in ['cancel', 'exit', 'back', 'menu', 'help', 'status', 'ideas']:
+        if session.get('mpesa_subscription_flow', {}).get('step') == 'awaiting_payment':
+            print(f"🔄 EMERGENCY: Clearing stuck awaiting_payment session for command: {incoming_msg}")
+            clear_mpesa_subscription_flow(session)
     
     # ✅ PROPER FIX: Handle M-Pesa subscription flow FIRST
     mpesa_flow = session.get('mpesa_subscription_flow')
@@ -2192,7 +2201,17 @@ Reply 'PAY' to initiate M-Pesa payment or 'CANCEL' to abort."""
                 return "Please reply 'PAY' to continue or 'CANCEL' to abort."
         
         elif current_step == 'awaiting_payment':
-            return "⏳ Waiting for your M-Pesa payment confirmation... Please complete the payment on your phone. You'll receive a confirmation message shortly. ✅"
+            # Check if payment might have been completed
+            checkout_id = mpesa_flow.get('mpesa_checkout_id')
+            if checkout_id:
+                checkout_session = find_checkout_session(checkout_id)
+                if not checkout_session:
+                    # Checkout session deleted = payment likely completed
+                    print(f"🔄 Auto-clearing completed payment session: {checkout_id}")
+                    clear_mpesa_subscription_flow(session)
+                    return "🔄 Your payment session has been cleared. Please check your subscription status with 'status' command."
+            
+            return "⏳ Still waiting for your M-Pesa payment confirmation. Please complete the payment on your phone or reply 'cancel' to abort."
     
     # ✅ Handle existing session states (QSTN, 4WD, product selection)
     if session.get('awaiting_qstn'):
