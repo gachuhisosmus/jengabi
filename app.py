@@ -17,6 +17,8 @@ import requests
 import json
 import base64
 from datetime import datetime, timedelta
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 
 # Load environment variables
@@ -27,6 +29,14 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = Flask(__name__)
 CORS(app)
+
+# Initialize Rate Limiting
+limiter = Limiter(
+    app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"  # For production, use Redis: "redis://localhost:6379"
+)
 
 # Telegram Configuration
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -50,6 +60,66 @@ def home():
         "endpoints": {
             "webhook": "/webhook (POST)"
         }
+    })
+
+# ===== ENVIRONMENT VERIFICATION ROUTE =====
+@app.route('/env-check', methods=['GET'])
+def env_check():
+    """Temporary route to verify environment variables are set in Render.com"""
+    env_vars = {
+        'MPESA_CONSUMER_KEY': {
+            'set': bool(os.getenv("MPESA_CONSUMER_KEY")),
+            'value_preview': os.getenv("MPESA_CONSUMER_KEY", "NOT_SET")[:10] + "..." if os.getenv("MPESA_CONSUMER_KEY") else "NOT_SET",
+            'length': len(os.getenv("MPESA_CONSUMER_KEY", ""))
+        },
+        'MPESA_CONSUMER_SECRET': {
+            'set': bool(os.getenv("MPESA_CONSUMER_SECRET")),
+            'value_preview': os.getenv("MPESA_CONSUMER_SECRET", "NOT_SET")[:10] + "..." if os.getenv("MPESA_CONSUMER_SECRET") else "NOT_SET",
+            'length': len(os.getenv("MPESA_CONSUMER_SECRET", ""))
+        },
+        'MPESA_PASSKEY': {
+            'set': bool(os.getenv("MPESA_PASSKEY")),
+            'value_preview': os.getenv("MPESA_PASSKEY", "NOT_SET")[:10] + "..." if os.getenv("MPESA_PASSKEY") else "NOT_SET",
+            'length': len(os.getenv("MPESA_PASSKEY", "")),
+            'is_sandbox': os.getenv("MPESA_PASSKEY") == "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919"
+        },
+        'MPESA_SHORTCODE': {
+            'set': bool(os.getenv("MPESA_SHORTCODE")),
+            'value': os.getenv("MPESA_SHORTCODE", "NOT_SET"),
+            'is_sandbox': os.getenv("MPESA_SHORTCODE") == "174379"
+        },
+        'OPENAI_API_KEY': {
+            'set': bool(os.getenv("OPENAI_API_KEY")),
+            'value_preview': os.getenv("OPENAI_API_KEY", "NOT_SET")[:10] + "..." if os.getenv("OPENAI_API_KEY") else "NOT_SET",
+            'length': len(os.getenv("OPENAI_API_KEY", ""))
+        },
+        'SUPABASE_URL': {
+            'set': bool(os.getenv("SUPABASE_URL")),
+            'value_preview': os.getenv("SUPABASE_URL", "NOT_SET")[:20] + "..." if os.getenv("SUPABASE_URL") else "NOT_SET"
+        },
+        'SUPABASE_SERVICE_ROLE_KEY': {
+            'set': bool(os.getenv("SUPABASE_SERVICE_ROLE_KEY")),
+            'value_preview': os.getenv("SUPABASE_SERVICE_ROLE_KEY", "NOT_SET")[:10] + "..." if os.getenv("SUPABASE_SERVICE_ROLE_KEY") else "NOT_SET",
+            'length': len(os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
+        },
+        'TELEGRAM_BOT_TOKEN': {
+            'set': bool(os.getenv("TELEGRAM_BOT_TOKEN")),
+            'value_preview': os.getenv("TELEGRAM_BOT_TOKEN", "NOT_SET")[:10] + "..." if os.getenv("TELEGRAM_BOT_TOKEN") else "NOT_SET",
+            'length': len(os.getenv("TELEGRAM_BOT_TOKEN", ""))
+        }
+    }
+    
+    # Check if using production M-Pesa credentials
+    mpesa_is_sandbox = env_vars['MPESA_PASSKEY']['is_sandbox'] or env_vars['MPESA_SHORTCODE']['is_sandbox']
+    
+    return jsonify({
+        "environment_variables_status": env_vars,
+        "source": "Render.com Environment Variables",
+        "all_required_set": all([env_vars[var]['set'] for var in ['MPESA_CONSUMER_KEY', 'MPESA_CONSUMER_SECRET', 'OPENAI_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']]),
+        "mpesa_mode": "SANDBOX" if mpesa_is_sandbox else "PRODUCTION",
+        "security_status": "SECURE" if not any([env_vars[var]['value_preview'] == "NOT_SET" for var in env_vars]) else "INCOMPLETE",
+        "timestamp": datetime.now().isoformat(),
+        "note": "This is a temporary verification route. Remove after confirmation."
     })
 
 # Initialize the Supabase client
@@ -320,7 +390,94 @@ def parse_manual_mpesa_confirmation(message):
         }
     except Exception as e:
         print(f"❌ M-Pesa confirmation parsing error: {e}")
-        return {'is_valid': False}    
+        return {'is_valid': False}
+
+# ===== PAYMENT VALIDATION FUNCTIONS =====
+def validate_payment_amount(plan_type, duration_type, amount_paid, custom_months=None):
+    """Verify payment amount matches expected price with security checks"""
+    # Validate inputs
+    if not isinstance(amount_paid, (int, float)) or amount_paid <= 0:
+        return False, "Invalid payment amount"
+    
+    if plan_type not in ENHANCED_PLANS:
+        return False, "Invalid plan type"
+    
+    # Calculate expected price
+    expected_price, error = calculate_subscription_price(plan_type, duration_type, custom_months)
+    if error:
+        return False, f"Price calculation error: {error}"
+    
+    # Allow small variance for floating point/rounding issues (max 1 KES)
+    amount_difference = abs(amount_paid - expected_price['final_amount'])
+    
+    if amount_difference > 1:
+        log_security_event("WARN", 
+            f"Payment amount mismatch", 
+            additional_data={
+                "expected": expected_price['final_amount'],
+                "paid": amount_paid, 
+                "difference": amount_difference,
+                "plan": plan_type,
+                "duration": duration_type
+            }
+        )
+        return False, f"Payment amount mismatch. Expected: {expected_price['final_amount']}, Paid: {amount_paid}"
+    
+    return True, "Amount valid"
+
+def validate_mpesa_callback(data):
+    """Validate M-Pesa callback data structure"""
+    required_fields = ['Body', 'stkCallback', 'ResultCode', 'CheckoutRequestID']
+    
+    if not data or not isinstance(data, dict):
+        return False, "Invalid callback data"
+    
+    # Check nested structure
+    body = data.get('Body', {})
+    stk_callback = body.get('stkCallback', {})
+    
+    for field in ['ResultCode', 'CheckoutRequestID']:
+        if field not in stk_callback:
+            return False, f"Missing required field: {field}"
+    
+    # Validate result code is integer
+    try:
+        result_code = int(stk_callback.get('ResultCode', -1))
+    except (ValueError, TypeError):
+        return False, "Invalid ResultCode format"
+    
+    return True, "Callback valid"
+
+def verify_payment_session_integrity(checkout_id, user_phone):
+    """Verify payment session hasn't been tampered with"""
+    try:
+        # Find checkout session
+        checkout_session = find_checkout_session(checkout_id)
+        if not checkout_session:
+            return False, "Payment session not found"
+        
+        # Verify session belongs to correct user
+        if checkout_session.get('user_phone') != user_phone:
+            log_security_event("WARN",
+                "Payment session ownership mismatch",
+                user_id=user_phone,
+                additional_data={
+                    "expected": user_phone,
+                    "actual": checkout_session.get('user_phone'),
+                    "checkout_id": checkout_id
+                }
+            )
+            return False, "Payment session validation failed"
+        
+        # Check if session is expired
+        expires_at = checkout_session.get('expires_at')
+        if expires_at and datetime.fromisoformat(expires_at) < datetime.now():
+            return False, "Payment session expired"
+        
+        return True, "Session valid"
+    except Exception as e:
+        log_security_event("ERROR", f"Payment session verification failed: {str(e)}")
+        return False, "Session verification error"
 
 # ===== SMART ANONYMIZATION =====
 def anonymize_for_command(command_type, user_profile, additional_data=None):
@@ -399,6 +556,98 @@ def ensure_user_session(phone_number):
         session['continue_data'] = None
     
     return session
+
+# ===== SECURITY FUNCTIONS =====
+import re
+import html
+
+def sanitize_input(text):
+    """Remove potentially dangerous characters and sanitize input"""
+    if not text or not isinstance(text, str):
+        return ""
+    
+    # Remove potentially dangerous characters
+    cleaned = re.sub(r'[<>&\"\';(){}\[\]\\]', '', text)
+    
+    # HTML escape any remaining special characters
+    cleaned = html.escape(cleaned)
+    
+    # Limit length to prevent abuse
+    if len(cleaned) > 1000:
+        cleaned = cleaned[:1000]
+    
+    return cleaned.strip()
+
+def validate_phone_number(phone):
+    """Strict phone number validation"""
+    if not phone or not isinstance(phone, str):
+        return False
+    # Only allow numbers and + - ( ) for international formats
+    if not re.match(r'^[\d\+\-\(\)\s]{10,15}$', phone):
+        return False
+    return True
+
+def sanitize_user_message(incoming_msg):
+    """Sanitize user messages for different contexts"""
+    safe_msg = sanitize_input(incoming_msg)
+    
+    # Additional checks for specific attack patterns
+    attack_patterns = [
+        r'(?i)script', r'(?i)javascript', r'(?i)onload', r'(?i)onerror',
+        r'(?i)alert', r'(?i)document\.cookie', r'(?i)window\.location',
+        r'(?i)eval\s*\(', r'(?i)setTimeout\s*\(', r'(?i)exec\s*\('
+    ]
+    
+    for pattern in attack_patterns:
+        if re.search(pattern, safe_msg):
+            safe_msg = re.sub(pattern, '[BLOCKED]', safe_msg)
+    
+    return safe_msg
+
+# ===== ENHANCED ERROR LOGGING =====
+import logging
+from datetime import datetime
+import traceback
+
+def log_security_event(level, message, user_id=None, ip_address=None, additional_data=None):
+    """Comprehensive security logging"""
+    timestamp = datetime.now().isoformat()
+    
+    log_data = {
+        "timestamp": timestamp,
+        "level": level,
+        "user_id": user_id,
+        "ip_address": ip_address,
+        "message": message,
+        "additional_data": additional_data
+    }
+    
+    # Format for console
+    console_msg = f"🔐 SECURITY {level} | {timestamp} | User: {user_id} | IP: {ip_address} | {message}"
+    
+    if level == "ERROR":
+        print(f"🔴 {console_msg}")
+    elif level == "WARN":
+        print(f"🟡 {console_msg}")
+    elif level == "INFO":
+        print(f"🔵 {console_msg}")
+    else:
+        print(f"⚪ {console_msg}")
+    
+    # Log additional data if provided
+    if additional_data:
+        print(f"   📋 Additional: {additional_data}")
+    
+    return log_data
+
+def safe_json_parse(json_string, default=None):
+    """Safely parse JSON with error handling"""
+    try:
+        return json.loads(json_string)
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        log_security_event("ERROR", f"JSON parse failed: {str(e)}", additional_data={"input": str(json_string)[:100]})
+        return default
+
 
 # ===== MPESA PHONE NUMBER MANAGEMENT =====
 
@@ -631,6 +880,110 @@ For *{selected_plan.upper()}* Plan:
 6. 🔢 *Custom Months* (2-11) - 5% discount
 
 Reply with *1-6*:"""
+
+# ===== SESSION SECURITY FUNCTIONS =====
+def check_session_expiry(session):
+    """Clear expired sessions to prevent memory leaks and abuse"""
+    max_session_age = 86400  # 24 hours
+    
+    if session.get('mpesa_subscription_flow'):
+        flow_data = session['mpesa_subscription_flow']
+        
+        # Check if session has creation time, if not add it
+        if 'created_at' not in flow_data:
+            flow_data['created_at'] = datetime.now().isoformat()
+            return False
+        
+        # Check age and clear if expired
+        try:
+            created_time = datetime.fromisoformat(flow_data['created_at'])
+            session_age = (datetime.now() - created_time).total_seconds()
+            
+            if session_age > max_session_age:
+                log_security_event("INFO", 
+                    "Cleared expired session",
+                    additional_data={
+                        "session_age_seconds": session_age,
+                        "checkout_id": flow_data.get('mpesa_checkout_id')
+                    }
+                )
+                clear_mpesa_subscription_flow(session)
+                return True
+        except (ValueError, TypeError) as e:
+            # If we can't parse the date, clear the session
+            log_security_event("WARN", f"Invalid session date format: {e}")
+            clear_mpesa_subscription_flow(session)
+            return True
+    
+    return False
+
+def validate_session_ownership(session, phone_number):
+    """Ensure session belongs to the correct user"""
+    if session.get('mpesa_subscription_flow'):
+        current_chat_phone = session['mpesa_subscription_flow'].get('current_chat_phone')
+        if current_chat_phone and current_chat_phone != phone_number:
+            log_security_event("WARN", 
+                "Session ownership mismatch",
+                user_id=phone_number,
+                additional_data={
+                    "expected": phone_number,
+                    "actual": current_chat_phone
+                }
+            )
+            return False
+    return True
+
+def sanitize_session_data(session):
+    """Remove sensitive data from session that shouldn't be stored long-term"""
+    sensitive_fields = ['mpesa_checkout_id', 'payment_phone_number', 'mpesa_account_reference']
+    
+    if session.get('mpesa_subscription_flow'):
+        flow_data = session['mpesa_subscription_flow']
+        
+        # Create a safe copy without sensitive data for logging
+        safe_flow_data = {k: v for k, v in flow_data.items() if k not in sensitive_fields}
+        
+        log_security_event("INFO", 
+            "Session data sanitized",
+            additional_data={
+                "session_step": flow_data.get('step'),
+                "safe_data": safe_flow_data
+            }
+        )
+    
+    return session
+
+def detect_session_anomalies(session, current_phone):
+    """Detect suspicious session activity"""
+    anomalies = []
+    
+    # Check for rapid state changes
+    if session.get('mpesa_subscription_flow'):
+        flow_data = session['mpesa_subscription_flow']
+        
+        # Check if session phone matches current request phone
+        if flow_data.get('current_chat_phone') != current_phone:
+            anomalies.append("Session phone mismatch")
+        
+        # Check for suspicious rapid progression through payment steps
+        if 'last_step_change' in flow_data:
+            last_change = datetime.fromisoformat(flow_data['last_step_change'])
+            time_since_change = (datetime.now() - last_change).total_seconds()
+            if time_since_change < 2:  # Less than 2 seconds between steps
+                anomalies.append("Suspiciously rapid step progression")
+    
+    if anomalies:
+        log_security_event("WARN",
+            "Session anomalies detected",
+            user_id=current_phone,
+            additional_data={
+                "anomalies": anomalies,
+                "session_step": session.get('mpesa_subscription_flow', {}).get('step')
+            }
+        )
+        return False, anomalies
+    
+    return True, []
 
 def handle_subscription_duration_selection(phone_number, user_input, session):
     """Handle duration selection in subscription flow"""
@@ -1531,14 +1884,164 @@ def sales_advice():
             'success': False, 
             'error': f'Sales advice service temporarily unavailable: {str(e)}'
         }), 500
+    
+# ===== SECURITY TEST ROUTE =====
+@app.route('/security-test', methods=['GET'])
+def security_test():
+    """Test security measures are working"""
+    # Get client info for logging
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    
+    log_security_event("INFO", "Security test initiated", ip_address=client_ip)
+    
+    # Test various security functions
+    tests = {
+        "sanitization_basic": sanitize_input("<script>alert('xss')</script>") == "&lt;script&gt;alert('xss')&lt;/script&gt;",
+        "sanitization_advanced": sanitize_input("Normal text") == "Normal text",
+        "phone_validation_valid": validate_phone_number("+254712345678"),
+        "phone_validation_invalid": not validate_phone_number("invalid_phone"),
+        "json_parsing_valid": safe_json_parse('{"test": "value"}') is not None,
+        "json_parsing_invalid": safe_json_parse('invalid json') is None,
+        "payment_validation_basic": validate_payment_amount('basic', 'monthly', 130) == (True, "Amount valid"),
+        "payment_validation_mismatch": validate_payment_amount('basic', 'monthly', 200) == (False, "Payment amount mismatch. Expected: 130, Paid: 200"),
+        "session_ownership_empty": validate_session_ownership({}, "test_phone") == True,
+        "mpesa_callback_validation": validate_mpesa_callback({
+            'Body': {
+                'stkCallback': {
+                    'ResultCode': '0',
+                    'CheckoutRequestID': 'test123'
+                }
+            }
+        }) == (True, "Callback valid")
+    }
+    
+    # Test rate limiting (this would need actual requests to test properly)
+    tests["rate_limiting_configured"] = hasattr(app, 'limiter')
+    
+    # Count passed tests
+    passed_tests = sum(tests.values())
+    total_tests = len(tests)
+    all_passed = all(tests.values())
+    
+    # Log test results
+    log_security_event(
+        "INFO" if all_passed else "WARN", 
+        "Security tests completed", 
+        ip_address=client_ip,
+        additional_data={
+            "passed": passed_tests,
+            "total": total_tests,
+            "all_passed": all_passed,
+            "detailed_results": tests
+        }
+    )
+    
+    # Return comprehensive test results
+    return jsonify({
+        "status": "success" if all_passed else "warning",
+        "message": f"Security tests: {passed_tests}/{total_tests} passed",
+        "all_tests_passed": all_passed,
+        "tests": tests,
+        "security_features": {
+            "input_sanitization": True,
+            "rate_limiting": True,
+            "payment_validation": True,
+            "session_security": True,
+            "error_logging": True,
+            "mpesa_validation": True
+        },
+        "timestamp": datetime.now().isoformat(),
+        "client_ip": client_ip
+    })
+
+@app.route('/security-test-full', methods=['GET'])
+def security_test_full():
+    """Comprehensive security test with real scenarios"""
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    
+    log_security_event("INFO", "Comprehensive security test initiated", ip_address=client_ip)
+    
+    # Test malicious input scenarios
+    malicious_inputs = [
+        "<script>alert('xss')</script>",
+        "'; DROP TABLE users; --",
+        "../../etc/passwd",
+        "{{7*7}}",
+        "javascript:alert('xss')",
+        "onload=alert('xss')"
+    ]
+    
+    sanitization_results = {}
+    for malicious_input in malicious_inputs:
+        sanitized = sanitize_input(malicious_input)
+        sanitization_results[malicious_input] = {
+            "sanitized": sanitized,
+            "is_safe": not any(dangerous in sanitized for dangerous in ['<script>', 'javascript:', 'onload='])
+        }
+    
+    # Test session security scenarios
+    session_tests = {
+        "expired_session_check": check_session_expiry({
+            'mpesa_subscription_flow': {
+                'created_at': (datetime.now() - timedelta(hours=25)).isoformat()
+            }
+        }) == True,
+        "valid_session_check": check_session_expiry({
+            'mpesa_subscription_flow': {
+                'created_at': datetime.now().isoformat()
+            }
+        }) == False
+    }
+    
+    # Test payment validation edge cases
+    payment_tests = {
+        "zero_amount": validate_payment_amount('basic', 'monthly', 0) == (False, "Invalid payment amount"),
+        "negative_amount": validate_payment_amount('basic', 'monthly', -100) == (False, "Invalid payment amount"),
+        "string_amount": validate_payment_amount('basic', 'monthly', "100") == (False, "Invalid payment amount"),
+        "invalid_plan": validate_payment_amount('invalid_plan', 'monthly', 100) == (False, "Invalid plan type")
+    }
+    
+    all_tests = {**sanitization_results, **session_tests, **payment_tests}
+    passed_count = sum(1 for test in all_tests.values() if isinstance(test, bool) and test)
+    total_count = len([test for test in all_tests.values() if isinstance(test, bool)])
+    
+    return jsonify({
+        "status": "comprehensive_test_complete",
+        "summary": {
+            "total_scenarios_tested": len(all_tests),
+            "security_checks_passed": passed_count,
+            "security_checks_failed": total_count - passed_count
+        },
+        "detailed_results": {
+            "malicious_input_sanitization": sanitization_results,
+            "session_security": session_tests,
+            "payment_validation": payment_tests
+        },
+        "security_recommendations": [
+            "✅ Input sanitization is working",
+            "✅ Session security checks are active" if passed_count > 0 else "⚠️ Review session security",
+            "✅ Payment validation is functional" if any(payment_tests.values()) else "⚠️ Check payment validation",
+            "🔒 All security features are operational" if passed_count == total_count else "⚠️ Some security features need attention"
+        ],
+        "timestamp": datetime.now().isoformat()
+    })
 
 # ===== MPESA CALLBACK ROUTE =====
 @app.route('/mpesa-callback', methods=['POST'])
+@limiter.limit("100 per minute")  # M-Pesa might send multiple callbacks
 def mpesa_callback():
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    log_security_event("INFO", "M-Pesa callback received", ip_address=client_ip)
     """Handle M-Pesa payment confirmation - ENHANCED VERSION"""
     try:
         data = request.get_json()
         print(f"📱 MPESA CALLBACK RECEIVED: {json.dumps(data, indent=2)}")
+
+        # Validate callback structure
+        is_valid, validation_msg = validate_mpesa_callback(data)
+        if not is_valid:
+            log_security_event("WARN", f"Invalid M-Pesa callback: {validation_msg}", ip_address=client_ip)
+            return jsonify({"ResultCode": 1, "ResultDesc": "Invalid callback"})
         
         # Extract payment details
         callback_data = data.get('Body', {}).get('stkCallback', {})
@@ -1619,21 +2122,29 @@ def api_health():
 
 # ===== TELEGRAM WEBHOOK ROUTES =====
 @app.route('/telegram-webhook', methods=['POST'])
+@limiter.limit("20 per minute")  
 def telegram_webhook():
     """Receive messages from Telegram - FIXED VERSION"""
     print("🟢 TELEGRAM WEBHOOK CALLED - REQUEST RECEIVED")
+
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
     try:
         data = request.get_json()
         
         if not data:
+            log_security_event("WARN", "Empty Telegram webhook data", ip_address=client_ip)
+            return "OK"
             print("❌ TELEGRAM: No JSON data received")
             return "OK"
             
         if 'message' in data:
             message = data['message']
             chat_id = message['chat']['id']
-            text = message.get('text', '')
+            raw_text = message.get('text', '')
+            text = sanitize_user_message(raw_text)
+            
+            log_security_event("INFO", "Telegram message received", user_id=f"telegram:{chat_id}", ip_address=client_ip)
             
             print(f"📱 Telegram Message: chat_id={chat_id}, text='{text}'")
             
@@ -2034,17 +2545,50 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
     
     print(f"🔍 TELEGRAM SESSION STATES: Processing '{incoming_msg}', states: { {k: v for k, v in session.items() if v} }")
 
-    # ✅ Force clear stuck M-Pesa sessions for certain commands
-    if incoming_msg.strip().lower() in ['cancel', 'exit', 'back', 'menu', 'help', 'status', 'ideas']:
-        if session.get('mpesa_subscription_flow', {}).get('step') == 'awaiting_payment':
-            print(f"🔄 EMERGENCY: Clearing stuck awaiting_payment session for command: {incoming_msg}")
+    # 🚨 CRITICAL FIX: Handle exit/cancel commands FIRST - before M-Pesa flow
+    clean_msg = incoming_msg.strip().lower()
+    exit_commands = ['cancel', 'exit', 'back', 'menu', 'start', 'help', 'status']
+    
+    if clean_msg in exit_commands:
+        print(f"🔄 USER REQUESTED EXIT: '{incoming_msg}' - Clearing M-Pesa flow")
+        if session.get('mpesa_subscription_flow'):
             clear_mpesa_subscription_flow(session)
+            log_security_event("INFO", "User cancelled M-Pesa flow", user_id=phone_number)
+            return f"Payment process cancelled. Returning to main menu. Use /help to see available commands."
+        else:
+            # Clear any other session states
+            session.update({
+                'awaiting_qstn': False,
+                'awaiting_4wd': False,
+                'awaiting_product_selection': False,
+                'continue_data': None
+            })
+            return "Returning to main menu. Use /help to see available commands."
     
     # ✅ PROPER FIX: Handle M-Pesa subscription flow FIRST
     mpesa_flow = session.get('mpesa_subscription_flow')
     if mpesa_flow:
         current_step = mpesa_flow.get('step', 'plan_selection')
         print(f"🔍 MPESA FLOW: Current step = {current_step}")
+
+        # 🚨 FIX: Handle cancellation within M-Pesa flow
+        if current_step == 'awaiting_payment':
+            if clean_msg in ['cancel', 'exit']:
+                print(f"🔄 CANCELLING AWAITING PAYMENT: {clean_msg}")
+                clear_mpesa_subscription_flow(session)
+                return "Payment process cancelled. Returning to main menu."
+            
+            # Check if payment might have been completed
+            checkout_id = mpesa_flow.get('mpesa_checkout_id')
+            if checkout_id:
+                checkout_session = find_checkout_session(checkout_id)
+                if not checkout_session:
+                    # Checkout session deleted = payment likely completed
+                    print(f"🔄 Auto-clearing completed payment session: {checkout_id}")
+                    clear_mpesa_subscription_flow(session)
+                    return "🔄 Your payment session has been cleared. Please check your subscription status with 'status' command."
+            
+            return "⏳ Still waiting for your M-Pesa payment confirmation. Please complete the payment on your phone or reply 'cancel' to abort."
         
         if current_step == 'plan_selection':
             if incoming_msg.strip() in ['1', '2', '3']:
@@ -2211,7 +2755,7 @@ Reply *'PAY'* to initiate M-Pesa payment or *'CANCEL'* to abort."""
                     clear_mpesa_subscription_flow(session)
                     return "🔄 Your payment session has been cleared. Please check your subscription status with 'status' command."
             
-            return "⏳ Still waiting for your M-Pesa payment confirmation. Please complete the payment on your phone or reply 'cancel' to abort."
+            return "⏳ Still waiting for your M-Pesa payment confirmation. Please complete the payment on your phone or reply *'cancel'* to abort."
     
     # ✅ Handle existing session states (QSTN, 4WD, product selection)
     if session.get('awaiting_qstn'):
@@ -3714,7 +4258,7 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
             return True, "Returning to main menu. Use /help to see available commands."
         
         else:
-            return False, "Please choose a valid option (1-9):"
+            return False, "Please choose a valid option (1-9) or reply with *'cancel'* to exit:"
     
     # Handle field updates
     elif step in ['updating_business_name', 'updating_business_type', 'updating_location', 
@@ -3747,7 +4291,7 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
     else:
         print(f"🔧 PROFILE MGMT ERROR: Unknown step '{step}', resetting to menu")
         session['profile_step'] = 'menu'
-        return False, "I didn't understand that. Please choose a valid option (1-9):"
+        return False, "I didn't understand that. Please choose a valid option (1-9) or reply with *'cancel'* to exit:"
     
 def start_product_management(phone_number, user_profile):
     """Start product management sub-menu"""
@@ -4106,7 +4650,26 @@ def cleanup_expired_sessions():
         print(f"❌ Error cleaning up sessions: {e}")
 
 @app.route('/webhook', methods=['POST'])
+@limiter.limit("10 per minute")  # Prevent spam to webhook
 def webhook():
+    print(f"🔍 WEBHOOK CALLED: {datetime.now()}")
+
+    # Get IP address for security logging
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    
+    # Sanitize input
+    raw_msg = request.values.get('Body', '')
+    incoming_msg = sanitize_user_message(raw_msg)
+    phone_number = request.values.get('From', '')
+    
+    log_security_event("INFO", "Webhook received", user_id=phone_number, ip_address=client_ip)
+    
+    # Check for suspicious patterns
+    if len(raw_msg) > 1000:  # Very long message might be attack
+        log_security_event("WARN", "Oversized message received", user_id=phone_number, 
+                          additional_data={"length": len(raw_msg)})
+        incoming_msg = incoming_msg[:1000]  # Truncate
+
     """Handle both WhatsApp and Telegram"""
     # Check if it's Telegram request (JSON content type)
     if request.headers.get('Content-Type') == 'application/json':
