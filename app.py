@@ -162,21 +162,27 @@ def setup_telegram_webhook():
         print(f"🟢 SetWebhook response status: {response.status_code}")
         print(f"🟢 SetWebhook response body: {response.text}")
         
+        # In initiate_mpesa_payment function, find this section:
         if response.status_code == 200:
             data = response.json()
-            if data.get('ok') and data.get('result'):
-                print("✅ Telegram webhook set successfully!")
-                if isinstance(data.get('result'), dict):
-                   print(f"✅ Webhook URL: {data.get('result', {}).get('url', 'Unknown')}")
-                else:
-                   print(f"✅ Webhook result: {data.get('result')}")
-                return True
+            if data.get('ResponseCode') == '0':
+                checkout_id = data.get('CheckoutRequestID')
+                print(f"✅ M-Pesa STK Push initiated successfully: {checkout_id}")
+                return checkout_id, "Check your phone for M-Pesa prompt to complete payment."
             else:
-                print(f"❌ Telegram API error: {data}")
-                return False
+                error_msg = data.get('ResponseDescription', 'Unknown M-Pesa error')
+                error_code = None
+                if 'resultcode' in data:
+                    error_code = data.get('resultcode')
+                elif 'errorCode' in data:
+                   error_code = data.get('errorCode')
+    
+                user_friendly_msg = get_mpesa_error_message(error_code) if error_code else error_msg
+                print(f"❌ M-Pesa error: {error_msg} (Code: {error_code})")
+                return None, f"M-Pesa error: {user_friendly_msg}"
         else:
-            print(f"❌ HTTP error: {response.status_code}")
-            return False
+            print(f"❌ HTTP error: {response.status_code} - {response.text}")
+            return None, f"Payment service temporarily unavailable. Please try again later."
             
     except Exception as e:
         print(f"❌ Telegram webhook error: {e}")
@@ -299,8 +305,15 @@ def initiate_mpesa_payment(phone_number, amount, plan_type, account_reference):
                 return checkout_id, "Check your phone for M-Pesa prompt to complete payment."
             else:
                 error_msg = data.get('ResponseDescription', 'Unknown M-Pesa error')
-                print(f"❌ M-Pesa error: {error_msg}")
-                return None, f"M-Pesa error: {error_msg}"
+                error_code = None
+                if 'resultcode' in data:
+                    error_code = data.get('resultcode')
+                elif 'errorCode' in data:
+                     error_code = data.get('errorCode')
+    
+                user_friendly_msg = get_mpesa_error_message(error_code) if error_code else error_msg
+                print(f"❌ M-Pesa error: {error_msg} (Code: {error_code})")
+                return None, f"M-Pesa error: {user_friendly_msg}"
         else:
             print(f"❌ HTTP error: {response.status_code} - {response.text}")
             return None, f"Payment service temporarily unavailable. Please try again later."
@@ -328,6 +341,29 @@ def get_mpesa_access_token_sandbox(consumer_key, consumer_secret, base_url):
     except Exception as e:
         print(f"❌ M-Pesa token exception: {e}")
         return None
+    
+# error handling FUNCTION 
+def get_mpesa_error_message(result_code):
+    """Get user-friendly M-Pesa error messages"""
+    error_messages = {
+        1: "System processing error - please try again",
+        2001: "Insufficient funds in your account",
+        2002: "Transaction amount is less than the minimum allowed",
+        2003: "Transaction amount is more than the maximum allowed", 
+        2004: "Invalid M-Pesa PIN",
+        2005: "Payment processing failed - please try again",
+        2006: "Transaction cancelled by user",
+        2007: "Phone number is not registered with M-Pesa",
+        2008: "Transaction timed out - please try again",
+        2009: "Invalid transaction reference",
+        2010: "Invalid phone number format",
+        2011: "Transaction declined by your mobile provider",
+        2012: "Account has restrictions - contact your bank",
+        2013: "Transaction limit exceeded",
+        2014: "Too many failed attempts - try again later",
+        2029: "Payment failed - please check your account balance and try again"
+    }
+    return error_messages.get(result_code, "Payment failed - please try again")
 
 def activate_subscription(phone_number, plan_type, mpesa_receipt=None, amount=None):
     """Activate user subscription after successful payment"""
@@ -2031,11 +2067,12 @@ def security_test_full():
 
 # ===== MPESA CALLBACK ROUTE =====
 @app.route('/mpesa-callback', methods=['POST'])
-@limiter.limit("100 per minute")  # M-Pesa might send multiple callbacks
+@limiter.limit("100 per minute")
 def mpesa_callback():
+    """Handle M-Pesa payment confirmation - COMPLETE FIXED VERSION"""
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     log_security_event("INFO", "M-Pesa callback received", ip_address=client_ip)
-    """Handle M-Pesa payment confirmation - ENHANCED VERSION"""
+    
     try:
         data = request.get_json()
         print(f"📱 MPESA CALLBACK RECEIVED: {json.dumps(data, indent=2)}")
@@ -2050,11 +2087,11 @@ def mpesa_callback():
         callback_data = data.get('Body', {}).get('stkCallback', {})
         result_code = callback_data.get('ResultCode')
         checkout_request_id = callback_data.get('CheckoutRequestID')
-
+        
         print(f"🔍 MPESA CALLBACK: ResultCode={result_code}, CheckoutRequestID={checkout_request_id}")
         
         if result_code == 0:
-            # Payment successful - process payment
+            # Payment successful
             callback_metadata = callback_data.get('CallbackMetadata', {}).get('Item', [])
             payment_data = {}
             for item in callback_metadata:
@@ -2067,16 +2104,12 @@ def mpesa_callback():
             
             print(f"✅ PAYMENT SUCCESS: {mpesa_receipt} - KSh {amount} from {phone_number}")
             
-            # Find the user session with this checkout ID
-            # ✅ NEW CODE: Find checkout session from database
-            user_found = False
+            # Find the checkout session
             checkout_session = find_checkout_session(checkout_request_id)
-
             if checkout_session:
                 chat_phone = checkout_session['user_phone']
-                session_data = ensure_user_session(chat_phone)
-    
-                # Prepare subscription data from stored session
+                
+                # Prepare subscription data
                 subscription_data = {
                     'plan_type': checkout_session['selected_plan'],
                     'duration_type': checkout_session['selected_duration'],
@@ -2085,7 +2118,7 @@ def mpesa_callback():
                     'discount_percent': 0,
                     'account_reference': checkout_session['account_reference']
                 }
-    
+                
                 # Prepare payment data
                 enhanced_payment_data = {
                     'checkout_request_id': checkout_request_id,
@@ -2094,11 +2127,11 @@ def mpesa_callback():
                     'amount': amount,
                     'transaction_date': transaction_date
                 }
-    
+                
                 # Activate subscription
                 if activate_enhanced_subscription(chat_phone, enhanced_payment_data, subscription_data):
                     print(f"✅ SUBSCRIPTION ACTIVATED for {chat_phone}")
-        
+                    
                     # Clear session and delete checkout session
                     session_data = ensure_user_session(chat_phone)
                     clear_mpesa_subscription_flow(session_data)
@@ -2116,7 +2149,7 @@ def mpesa_callback():
         else:
             # Payment failed or cancelled
             result_desc = callback_data.get('ResultDesc', 'Payment failed')
-            print(f"❌ PAYMENT FAILED: {result_desc}")
+            print(f"❌ PAYMENT FAILED: {result_desc} (Code: {result_code})")
             
             # Find and clear the failed session
             checkout_session = find_checkout_session(checkout_request_id)
