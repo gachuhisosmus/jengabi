@@ -197,16 +197,22 @@ def get_mpesa_access_token():
         if not MPESA_CONSUMER_KEY or not MPESA_CONSUMER_SECRET:
             return None
             
-        url = "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
+        # ✅ CORRECT: Use environment variable or fallback
+        base_oauth_url = os.getenv("MPESA_OAUTH_URL", "https://api.safaricom.co.ke/oauth/v1/generate")
+        url = f"{base_oauth_url}?grant_type=client_credentials"
+        
+        print(f"🔍 MPESA DEBUG: Using OAuth URL: {url}")  # Debug line
+        
         response = requests.get(
-            url,
+            url,  # Now uses the correct URL from env var
             auth=(MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET),
             timeout=30
         )
+        
         if response.status_code == 200:
             return response.json()['access_token']
         else:
-            print(f"❌ M-Pesa token error: {response.text}")
+            print(f"❌ M-Pesa token error: {response.status_code} - {response.text}")
             return None
     except Exception as e:
         print(f"❌ M-Pesa token exception: {e}")
@@ -234,7 +240,11 @@ def initiate_mpesa_payment(phone_number, amount, plan_type, account_reference):
             consumer_secret = MPESA_CONSUMER_SECRET
             shortcode = MPESA_SHORTCODE
             passkey = MPESA_PASSKEY
-            base_url = " https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
+            base_url = os.getenv("MPESA_BASE_URL", "https://api.safaricom.co.ke")
+
+        # ✅ Use environment variable for STK Push endpoint
+        stk_endpoint = os.getenv("MPESA_STKPUSH", "https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest")
+        url = f"{base_url}{stk_endpoint}"    
         
         # Get access token
         access_token = get_mpesa_access_token_sandbox(consumer_key, consumer_secret, base_url)
