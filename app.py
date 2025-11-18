@@ -2050,9 +2050,11 @@ def mpesa_callback():
         callback_data = data.get('Body', {}).get('stkCallback', {})
         result_code = callback_data.get('ResultCode')
         checkout_request_id = callback_data.get('CheckoutRequestID')
+
+        print(f"🔍 MPESA CALLBACK: ResultCode={result_code}, CheckoutRequestID={checkout_request_id}")
         
         if result_code == 0:
-            # Payment successful
+            # Payment successful - process payment
             callback_metadata = callback_data.get('CallbackMetadata', {}).get('Item', [])
             payment_data = {}
             for item in callback_metadata:
@@ -2097,17 +2099,39 @@ def mpesa_callback():
                 if activate_enhanced_subscription(chat_phone, enhanced_payment_data, subscription_data):
                     print(f"✅ SUBSCRIPTION ACTIVATED for {chat_phone}")
         
-                    # Clear the M-Pesa flow from session
-                    if 'mpesa_subscription_flow' in session_data:
-                        clear_mpesa_subscription_flow(session_data)
-        
-                    # Delete the used checkout session
+                    # Clear session and delete checkout session
+                    session_data = ensure_user_session(chat_phone)
+                    clear_mpesa_subscription_flow(session_data)
+                    
                     try:
-                       supabase.table('checkout_sessions').delete().eq('checkout_request_id', checkout_request_id).execute()
+                        supabase.table('checkout_sessions').delete().eq('checkout_request_id', checkout_request_id).execute()
                     except Exception as e:
                         print(f"⚠️ Error deleting checkout session: {e}")
-        
-                    user_found = True
+                    
+                    return jsonify({"ResultCode": 0, "ResultDesc": "Success"})
+                else:
+                    return jsonify({"ResultCode": 1, "ResultDesc": "Subscription activation failed"})
+            else:
+                return jsonify({"ResultCode": 1, "ResultDesc": "Checkout session not found"})
+        else:
+            # Payment failed or cancelled
+            result_desc = callback_data.get('ResultDesc', 'Payment failed')
+            print(f"❌ PAYMENT FAILED: {result_desc}")
+            
+            # Find and clear the failed session
+            checkout_session = find_checkout_session(checkout_request_id)
+            if checkout_session:
+                chat_phone = checkout_session['user_phone']
+                session_data = ensure_user_session(chat_phone)
+                clear_mpesa_subscription_flow(session_data)
+                
+                # Delete failed checkout session
+                try:
+                    supabase.table('checkout_sessions').delete().eq('checkout_request_id', checkout_request_id).execute()
+                except Exception as e:
+                    print(f"⚠️ Error deleting failed checkout session: {e}")
+            
+            return jsonify({"ResultCode": 0, "ResultDesc": "Callback processed"})
             
     except Exception as e:
         print(f"❌ MPESA CALLBACK ERROR: {e}")
