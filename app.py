@@ -197,7 +197,7 @@ def get_mpesa_access_token():
         if not MPESA_CONSUMER_KEY or not MPESA_CONSUMER_SECRET:
             return None
             
-        url = "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
+        url = "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
         response = requests.get(
             url,
             auth=(MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET),
@@ -234,7 +234,7 @@ def initiate_mpesa_payment(phone_number, amount, plan_type, account_reference):
             consumer_secret = MPESA_CONSUMER_SECRET
             shortcode = MPESA_SHORTCODE
             passkey = MPESA_PASSKEY
-            base_url = "https://api.safaricom.co.ke"
+            base_url = " https://api.safaricom.co.ke"
         
         # Get access token
         access_token = get_mpesa_access_token_sandbox(consumer_key, consumer_secret, base_url)
@@ -279,7 +279,7 @@ def initiate_mpesa_payment(phone_number, amount, plan_type, account_reference):
             "Content-Type": "application/json"
         }
         
-        url = f"{base_url}/mpesa/stkpush/v1/processrequest"
+        url = f"{base_url}/ https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
         
         print(f"🔄 Initiating M-Pesa payment: {phone_number}, Amount: {amount}, Plan: {plan_type}")
         print(f"📱 Using URL: {url}")
