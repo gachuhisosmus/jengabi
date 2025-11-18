@@ -66,61 +66,109 @@ def home():
 @app.route('/env-check', methods=['GET'])
 def env_check():
     """Temporary route to verify environment variables are set in Render.com"""
-    env_vars = {
-        'MPESA_CONSUMER_KEY': {
-            'set': bool(os.getenv("MPESA_CONSUMER_KEY")),
-            'value_preview': os.getenv("MPESA_CONSUMER_KEY", "NOT_SET")[:10] + "..." if os.getenv("MPESA_CONSUMER_KEY") else "NOT_SET",
-            'length': len(os.getenv("MPESA_CONSUMER_KEY", ""))
-        },
-        'MPESA_CONSUMER_SECRET': {
-            'set': bool(os.getenv("MPESA_CONSUMER_SECRET")),
-            'value_preview': os.getenv("MPESA_CONSUMER_SECRET", "NOT_SET")[:10] + "..." if os.getenv("MPESA_CONSUMER_SECRET") else "NOT_SET",
-            'length': len(os.getenv("MPESA_CONSUMER_SECRET", ""))
-        },
-        'MPESA_PASSKEY': {
-            'set': bool(os.getenv("MPESA_PASSKEY")),
-            'value_preview': os.getenv("MPESA_PASSKEY", "NOT_SET")[:10] + "..." if os.getenv("MPESA_PASSKEY") else "NOT_SET",
-            'length': len(os.getenv("MPESA_PASSKEY", "")),
-            'is_sandbox': os.getenv("MPESA_PASSKEY") == "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919"
-        },
-        'MPESA_SHORTCODE': {
-            'set': bool(os.getenv("MPESA_SHORTCODE")),
-            'value': os.getenv("MPESA_SHORTCODE", "NOT_SET"),
-            'is_sandbox': os.getenv("MPESA_SHORTCODE") == "174379"
-        },
-        'OPENAI_API_KEY': {
-            'set': bool(os.getenv("OPENAI_API_KEY")),
-            'value_preview': os.getenv("OPENAI_API_KEY", "NOT_SET")[:10] + "..." if os.getenv("OPENAI_API_KEY") else "NOT_SET",
-            'length': len(os.getenv("OPENAI_API_KEY", ""))
-        },
-        'SUPABASE_URL': {
-            'set': bool(os.getenv("SUPABASE_URL")),
-            'value_preview': os.getenv("SUPABASE_URL", "NOT_SET")[:20] + "..." if os.getenv("SUPABASE_URL") else "NOT_SET"
-        },
-        'SUPABASE_SERVICE_ROLE_KEY': {
-            'set': bool(os.getenv("SUPABASE_SERVICE_ROLE_KEY")),
-            'value_preview': os.getenv("SUPABASE_SERVICE_ROLE_KEY", "NOT_SET")[:10] + "..." if os.getenv("SUPABASE_SERVICE_ROLE_KEY") else "NOT_SET",
-            'length': len(os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""))
-        },
-        'TELEGRAM_BOT_TOKEN': {
-            'set': bool(os.getenv("TELEGRAM_BOT_TOKEN")),
-            'value_preview': os.getenv("TELEGRAM_BOT_TOKEN", "NOT_SET")[:10] + "..." if os.getenv("TELEGRAM_BOT_TOKEN") else "NOT_SET",
-            'length': len(os.getenv("TELEGRAM_BOT_TOKEN", ""))
-        }
-    }
+    try:
+        env_vars = {}
+        
+        # List of variables to check
+        variables_to_check = [
+            'MPESA_CONSUMER_KEY', 'MPESA_CONSUMER_SECRET', 'MPESA_PASSKEY', 
+            'MPESA_SHORTCODE', 'OPENAI_API_KEY', 'SUPABASE_URL', 
+            'SUPABASE_SERVICE_ROLE_KEY', 'TELEGRAM_BOT_TOKEN'
+        ]
+        
+        for var in variables_to_check:
+            value = os.getenv(var)
+            env_vars[var] = {
+                'set': bool(value),
+                'value_preview': value[:10] + "..." if value and len(value) > 10 else "NOT_SET" if not value else value,
+                'length': len(value) if value else 0
+            }
+        
+        # Check if using sandbox or live credentials
+        mpesa_passkey = os.getenv("MPESA_PASSKEY", "")
+        mpesa_shortcode = os.getenv("MPESA_SHORTCODE", "")
+        
+        mpesa_is_sandbox = (
+            not os.getenv("MPESA_CONSUMER_KEY") or 
+            mpesa_passkey == "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919" or
+            mpesa_shortcode == "174379"
+        )
+        
+        # Safe security status check
+        all_vars_have_preview = all('value_preview' in env_vars[var] for var in variables_to_check)
+        security_status = "SECURE" if all_vars_have_preview and all(env_vars[var]['set'] for var in ['MPESA_CONSUMER_KEY', 'MPESA_CONSUMER_SECRET', 'OPENAI_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']) else "INCOMPLETE"
+        
+        return jsonify({
+            "environment_variables_status": env_vars,
+            "source": "Render.com Environment Variables",
+            "all_required_set": all([env_vars[var]['set'] for var in ['MPESA_CONSUMER_KEY', 'MPESA_CONSUMER_SECRET', 'OPENAI_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']]),
+            "mpesa_mode": "SANDBOX" if mpesa_is_sandbox else "PRODUCTION",
+            "security_status": security_status,
+            "timestamp": datetime.now().isoformat(),
+            "note": "This is a temporary verification route. Remove after confirmation."
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "error": "Environment check failed",
+            "details": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
     
-    # Check if using production M-Pesa credentials
-    mpesa_is_sandbox = env_vars['MPESA_PASSKEY']['is_sandbox'] or env_vars['MPESA_SHORTCODE']['is_sandbox']
-    
-    return jsonify({
-        "environment_variables_status": env_vars,
-        "source": "Render.com Environment Variables",
-        "all_required_set": all([env_vars[var]['set'] for var in ['MPESA_CONSUMER_KEY', 'MPESA_CONSUMER_SECRET', 'OPENAI_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']]),
-        "mpesa_mode": "SANDBOX" if mpesa_is_sandbox else "PRODUCTION",
-        "security_status": "SECURE" if not any([env_vars[var]['value_preview'] == "NOT_SET" for var in env_vars]) else "INCOMPLETE",
-        "timestamp": datetime.now().isoformat(),
-        "note": "This is a temporary verification route. Remove after confirmation."
-    })
+# ===== SIMPLE HEALTH CHECK =====
+@app.route('/simple-check', methods=['GET'])
+def simple_check():
+    """Simple health check without environment variables"""
+    try:
+        return jsonify({
+            "status": "server_running",
+            "timestamp": datetime.now().isoformat(),
+            "basic_test": "OK"
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ===== DEBUG ENVIRONMENT =====
+@app.route('/debug-env', methods=['GET'])
+def debug_env():
+    """Safe environment debug without complex dependencies"""
+    try:
+        # Basic environment check
+        env_vars = {}
+        
+        safe_vars = ['OPENAI_API_KEY', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 
+                    'MPESA_CONSUMER_KEY', 'MPESA_CONSUMER_SECRET', 'TELEGRAM_BOT_TOKEN']
+        
+        for var in safe_vars:
+            value = os.getenv(var)
+            env_vars[var] = {
+                'set': bool(value),
+                'length': len(value) if value else 0
+            }
+        
+        # Check M-Pesa mode safely
+        mpesa_passkey = os.getenv("MPESA_PASSKEY", "")
+        mpesa_shortcode = os.getenv("MPESA_SHORTCODE", "")
+        
+        mpesa_is_sandbox = (
+            not os.getenv("MPESA_CONSUMER_KEY") or 
+            mpesa_passkey == "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919" or
+            mpesa_shortcode == "174379"
+        )
+        
+        return jsonify({
+            "status": "success",
+            "mpesa_mode": "SANDBOX" if mpesa_is_sandbox else "LIVE",
+            "environment_vars": env_vars,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error_message": str(e),
+            "error_type": type(e).__name__
+        }), 500
 
 # Initialize the Supabase client
 supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
