@@ -32,7 +32,7 @@ CORS(app)
 
 # Initialize Rate Limiting
 limiter = Limiter(
-    app,
+    app=app,
     key_func=get_remote_address,
     default_limits=["200 per day", "50 per hour"],
     storage_uri="memory://"  # For production, use Redis: "redis://localhost:6379"
