@@ -234,7 +234,7 @@ def initiate_mpesa_payment(phone_number, amount, plan_type, account_reference):
             consumer_secret = MPESA_CONSUMER_SECRET
             shortcode = MPESA_SHORTCODE
             passkey = MPESA_PASSKEY
-            base_url = " https://api.safaricom.co.ke"
+            base_url = " https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
         
         # Get access token
         access_token = get_mpesa_access_token_sandbox(consumer_key, consumer_secret, base_url)
