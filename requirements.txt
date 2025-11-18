@@ -7,3 +7,4 @@ supabase
 gunicorn
 schedule
 pytrends
+flask_limiter
