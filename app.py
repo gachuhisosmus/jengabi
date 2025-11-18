@@ -881,7 +881,7 @@ def clear_mpesa_subscription_flow(session):
     if 'mpesa_subscription_flow' in session:
         print(f"🔄 CLEARING MPESA FLOW: {session['mpesa_subscription_flow'].get('step')}")
         del session['mpesa_subscription_flow']
-        session.modified = True
+     #   session.modified = True 
     return True
 
 def get_current_subscription_flow(session):
