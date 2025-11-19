@@ -2912,7 +2912,7 @@ Reply *'PAY'* to initiate M-Pesa payment or *'CANCEL'* to abort."""
     if user_profile.get('business_name'):
         business_context = f" {user_profile['business_name']}"
     
-    return f"I'm here to help your*{business_context}* business with marketing and Business Analysis! Use /ideas for content, /strat for strategies, /qstn for advice, /4wd for customer analysis, or /help for more options."
+    return f"I'm here to help your*{business_context}* business with *marketing* and *Business Analysis*! Use /ideas for content, /strat for strategies, /qstn for advice, /4wd for customer analysis, or /help for more options."
 
 @app.route('/debug-telegram', methods=['GET'])
 def debug_telegram():
@@ -4185,7 +4185,7 @@ def get_intelligent_response(incoming_msg, user_profile):
     
     # Default helpful response
     help_options = "Reply *'ideas'* for social media marketing ideas, *'strat'* for strategies, *'qstn'* for business advice, *'4wd'* for customer message analysis, *'status'* for subscription info, *'profile'* to manage your business info, or *'help'* for more options."
-    return f"I'm here to help your*{business_context}* business with social media marketing! {help_options}"
+    return f"I'm here to help your*{business_context}* business with *social media marketing* and *business analysis*! {help_options}"
 
 def check_subscription(profile_id):
     """Checks if the user has an active subscription."""
