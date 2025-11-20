@@ -173,6 +173,101 @@ def debug_env():
 # Initialize the Supabase client
 supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
 
+# ===== NEW DATABASE FUNCTIONS FOR ENHANCED FEATURES =====
+
+def initialize_user_credits(profile_id):
+    """Initialize credits for new users based on their plan"""
+    try:
+        # Get user's current plan
+        subscription = supabase.table('subscriptions').select('plan_type').eq('profile_id', profile_id).eq('is_active', True).execute()
+        
+        # Default credits based on plan
+        if subscription.data:
+            plan_type = subscription.data[0].get('plan_type', 'basic')
+            credits_map = {
+                'basic': {'image_credits': 10, 'enhancement_credits': 5, 'caption_credits': 20},
+                'growth': {'image_credits': 25, 'enhancement_credits': 15, 'caption_credits': 50},
+                'pro': {'image_credits': 100, 'enhancement_credits': 50, 'caption_credits': 200}
+            }
+            credits = credits_map.get(plan_type, credits_map['basic'])
+        else:
+            # Free trial credits
+            credits = {'image_credits': 3, 'enhancement_credits': 1, 'caption_credits': 10}
+        
+        # Insert credits record
+        supabase.table('user_credits').insert({
+            'profile_id': profile_id,
+            **credits
+        }).execute()
+        
+        return credits
+    except Exception as e:
+        print(f"Error initializing user credits: {e}")
+        return None
+
+def get_user_credits(profile_id):
+    """Get user's current credits"""
+    try:
+        response = supabase.table('user_credits').select('*').eq('profile_id', profile_id).execute()
+        if response.data:
+            return response.data[0]
+        else:
+            # Initialize if not exists
+            return initialize_user_credits(profile_id)
+    except Exception as e:
+        print(f"Error getting user credits: {e}")
+        return None
+
+def update_user_credits(profile_id, credit_type, amount_used=1):
+    """Update user credits after feature usage"""
+    try:
+        credits = get_user_credits(profile_id)
+        if not credits:
+            return False
+            
+        current_credits = credits.get(credit_type, 0)
+        if current_credits >= amount_used:
+            # Update credits
+            supabase.table('user_credits').update({
+                credit_type: current_credits - amount_used,
+                'total_credits_used': credits.get('total_credits_used', 0) + amount_used,
+                'updated_at': datetime.now().isoformat()
+            }).eq('profile_id', profile_id).execute()
+            return True
+        else:
+            return False  # Insufficient credits
+    except Exception as e:
+        print(f"Error updating user credits: {e}")
+        return False
+
+def log_feature_usage(profile_id, feature_type, credits_used=1, input_data=None, output_data=None):
+    """Log feature usage for analytics"""
+    try:
+        supabase.table('feature_usage').insert({
+            'profile_id': profile_id,
+            'feature_type': feature_type,
+            'credits_used': credits_used,
+            'input_data': input_data,
+            'output_data': output_data
+        }).execute()
+        return True
+    except Exception as e:
+        print(f"Error logging feature usage: {e}")
+        return False
+
+def get_caption_templates(category=None, limit=10):
+    """Get caption templates from database"""
+    try:
+        query = supabase.table('caption_templates').select('*').eq('is_active', True)
+        if category:
+            query = query.eq('category', category)
+        query = query.order('use_count', desc=True).limit(limit)
+        response = query.execute()
+        return response.data
+    except Exception as e:
+        print(f"Error getting caption templates: {e}")
+        return []
+
 # ===== TELEGRAM INTEGRATION =====
 def setup_telegram_webhook():
     """Set Telegram webhook to receive messages"""
@@ -4903,6 +4998,7 @@ I see you're new here! Let me help you set up your business profile so I can cre
                 'managing_profile': False,
                 'awaiting_qstn': False,
                 'awaiting_4wd': False,
+                'awaiting_plan_selection': False,
                 'continue_data': None,  # Clear continue_data for priority commands
             })
     
@@ -5270,7 +5366,7 @@ Paste or forward the customer message now:""")
                     status_message = f"""*📊 YOUR SUBSCRIPTION STATUS*
 
 *Plan:* {plan_type.upper()} Package
-*Price:* KSh {ENHANCED_PLANS[plan_type]['price']}/month
+*Price:* KSh {ENHANCED_PLANS[plan_type]['monthly_price']}/month
 *Benefits:* {ENHANCED_PLANS[plan_type]['description']}
 *Content Type:* {output_type.replace('_', ' ').title()}
 
