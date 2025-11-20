@@ -20,6 +20,16 @@ from datetime import datetime, timedelta
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
+# ===== SAFE DATABASE OPERATIONS =====
+def safe_supabase_operation(operation, fallback_value=None):
+    """Safely execute Supabase operations with error handling"""
+    try:
+        return operation()
+    except Exception as e:
+        print(f"❌ Supabase operation failed: {e}")
+        import traceback
+        print(f"❌ Full traceback: {traceback.format_exc()}")
+        return fallback_value
 
 # Load environment variables
 load_dotenv()
@@ -1472,6 +1482,61 @@ def log_mpesa_transaction(profile_id, payment_data, subscription_data):
     except Exception as e:
         print(f"❌ M-Pesa transaction logging error: {e}")
 
+# ===== PAYMENT CONFIRMATION FUNCTION =====
+def send_payment_confirmation(chat_phone, platform, subscription_data, payment_data):
+    """Send payment confirmation message to user - DYNAMIC FOR ALL PLANS"""
+    plan_type = subscription_data['plan_type']
+    amount = payment_data.get('amount', 0)
+    receipt = payment_data.get('mpesa_receipt', 'N/A')
+    transaction_date = payment_data.get('transaction_date', 'N/A')
+    
+    # Format transaction date if it exists
+    if transaction_date and transaction_date != 'N/A':
+        try:
+            if isinstance(transaction_date, int) or transaction_date.isdigit():
+                date_str = str(transaction_date)
+                formatted_date = f"{date_str[6:8]}/{date_str[4:6]}/{date_str[:4]} {date_str[8:10]}:{date_str[10:12]}"
+                transaction_date = formatted_date
+        except:
+            pass
+    
+    # Get plan details
+    plan_details = ENHANCED_PLANS.get(plan_type, ENHANCED_PLANS['basic'])
+    
+    confirmation_message = f"""✅ *SUBSCRIPTION ACTIVATED!*
+
+💰 *Payment Details:*
+• Amount: KSh {amount}
+• Receipt No: `{receipt}`
+• Date: {transaction_date}
+• Plan: {plan_type.upper()}
+
+🎉 *Welcome to JengaBI {plan_type.upper()} Plan!*
+
+*📊 YOUR SUBSCRIPTION STATUS*
+
+*Plan:* {plan_type.upper()} Package
+*Price:* KSh {plan_details['monthly_price']}/month  
+*Benefits:* {plan_details['description']}
+*Content Type:* {plan_details['output_type'].replace('_', ' ').title()}
+
+*📈 USAGE THIS MONTH:*
+*Used:* 0 AI generations
+*Remaining:* {99999 if plan_type == 'pro' else 20} AI generations
+
+💡 Reply *'ideas'* for social media marketing content"""
+    
+    # Add plan-specific features for Pro users
+    if plan_type == 'pro':
+        confirmation_message += "\n\n*🎯 PRO FEATURES:*\n• /trends - Real-time analysis\n• /competitor - Competitor intelligence"
+    
+    # Send based on platform
+    if platform == 'telegram':
+        send_telegram_message(chat_phone.replace('telegram:', ''), confirmation_message)
+    elif platform == 'whatsapp':
+        # You'll need to implement WhatsApp sending logic here
+        print(f"📱 WhatsApp confirmation for {chat_phone}: {confirmation_message}")
+
 ENHANCED_PLANS = {
     'basic': {
         'monthly_price': 130,
@@ -2274,6 +2339,14 @@ def mpesa_callback():
                 # Activate subscription
                 if activate_enhanced_subscription(chat_phone, enhanced_payment_data, subscription_data):
                     print(f"✅ SUBSCRIPTION ACTIVATED for {chat_phone}")
+
+                    # ✅ ADDED: Send confirmation message to user
+                    send_payment_confirmation(
+                        chat_phone, 
+                        checkout_session.get('platform', 'telegram'),
+                        subscription_data,
+                        enhanced_payment_data
+                    )
                     
                     # Clear session and delete checkout session
                     session_data = ensure_user_session(chat_phone)
@@ -2490,7 +2563,7 @@ def process_telegram_message(chat_id, incoming_msg):
     return handle_telegram_session_states(phone_number, user_profile, incoming_msg)
 
 def get_telegram_status(user_profile):
-    """Get Telegram-friendly status message"""
+    """Get Telegram-friendly status message with full details"""
     try:
         has_subscription = check_subscription(user_profile['id'])
         
@@ -2500,17 +2573,23 @@ def get_telegram_status(user_profile):
             output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
             
             remaining = get_remaining_messages(user_profile['id'])
+            used_messages = user_profile.get('used_messages', 0)
+            
+            # Get plan details from ENHANCED_PLANS
+            plan_details = ENHANCED_PLANS.get(plan_type, ENHANCED_PLANS['basic'])
             
             status_message = f"""*📊 YOUR SUBSCRIPTION STATUS*
 
 *Plan:* {plan_type.upper()} Package
+*Price:* KSh {plan_details['monthly_price']}/month
+*Benefits:* {plan_details['description']}
 *Content Type:* {output_type.replace('_', ' ').title()}
 
 *📈 USAGE THIS MONTH:*
-*Used:* {user_profile.get('used_messages', 0)} AI generations
+*Used:* {used_messages} AI generations
 *Remaining:* {remaining} AI generations
 
-💡 Use /ideas to get started"""
+💡 Reply *'ideas'* for social media marketing content"""
             
             if plan_type == 'pro':
                 status_message += "\n\n*🎯 PRO FEATURES:*\n• /trends - Real-time analysis\n• /competitor - Competitor intelligence"
@@ -3423,6 +3502,37 @@ def send_pro_weekly_updates():
                     
     except Exception as e:
         print(f"Weekly update error: {e}")
+
+def check_and_clear_stale_sessions():
+    """Clear sessions that have been inactive for too long"""
+    current_time = datetime.now()
+    phones_to_clear = []
+    
+    for phone, session_data in list(user_sessions.items()):
+        if 'mpesa_subscription_flow' in session_data:
+            flow_data = session_data['mpesa_subscription_flow']
+            if 'created_at' in flow_data:
+                try:
+                    created_time = datetime.fromisoformat(flow_data['created_at'])
+                    if (current_time - created_time).total_seconds() > 3600:  # 1 hour
+                        phones_to_clear.append(phone)
+                except (ValueError, TypeError) as e:
+                    print(f"⚠️ Invalid session time for {phone}: {e}")
+                    phones_to_clear.append(phone)
+    
+    for phone in phones_to_clear:
+        session_data = ensure_user_session(phone)
+        clear_mpesa_subscription_flow(session_data)
+        print(f"🔄 Cleared stale session for {phone}")
+
+# Schedule this to run periodically
+def schedule_session_cleanup():
+    """Schedule session cleanup every 30 minutes"""
+    schedule.every(30).minutes.do(check_and_clear_stale_sessions)
+
+# Start session cleanup scheduling
+cleanup_thread = threading.Thread(target=schedule_session_cleanup, daemon=True)
+cleanup_thread.start()
 
 # Schedule weekly updates
 def schedule_weekly_updates():
@@ -5582,6 +5692,7 @@ I'm here to help your business with social media marketing!"""
 
 try:
     cleanup_expired_sessions()
+    check_and_clear_stale_sessions() # Clear stale sessions on startup
 except Exception as e:
     print(f"⚠️ Startup cleanup failed: {e}")
 
