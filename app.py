@@ -2681,17 +2681,26 @@ def get_telegram_status(user_profile):
         has_subscription = check_subscription(user_profile['id'])
         
         if has_subscription:
-            plan_info = get_user_plan_info(user_profile['id'])
-            plan_type = plan_info.get('plan_type', 'unknown') if plan_info else 'unknown'
-            output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
-            
-            remaining = get_remaining_messages(user_profile['id'])
-            used_messages = user_profile.get('used_messages', 0)
-            
-            # Get plan details from ENHANCED_PLANS
-            plan_details = ENHANCED_PLANS.get(plan_type, ENHANCED_PLANS['basic'])
-            
-            status_message = f"""*📊 YOUR SUBSCRIPTION STATUS*
+            # 🚨 CRITICAL FIX: Get FRESH data from database, not cached user_profile
+            fresh_response = supabase.table('profiles').select('*').eq('id', user_profile['id']).execute()
+            if fresh_response.data:
+                fresh_data = fresh_response.data[0]
+                
+                plan_info = get_user_plan_info(user_profile['id'])
+                plan_type = plan_info.get('plan_type', 'unknown') if plan_info else 'unknown'
+                output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
+                
+                # 🚨 USE FRESH DATA, not cached user_profile
+                used_messages = fresh_data.get('used_messages', 0)
+                max_messages = fresh_data.get('max_messages', 99999)
+                remaining = max(0, max_messages - used_messages)
+                
+                print(f"🔄 STATUS: Fresh data - Used: {used_messages}, Max: {max_messages}, Remaining: {remaining}")
+                
+                # Get plan details from ENHANCED_PLANS
+                plan_details = ENHANCED_PLANS.get(plan_type, ENHANCED_PLANS['basic'])
+                
+                status_message = f"""*📊 YOUR SUBSCRIPTION STATUS*
 
 *Plan:* {plan_type.upper()} Package
 *Price:* KSh {plan_details['monthly_price']}/month
@@ -2703,9 +2712,12 @@ def get_telegram_status(user_profile):
 *Remaining:* {remaining} AI generations
 
 💡 Reply *'ideas'* for social media marketing content"""
-            
-            if plan_type == 'pro':
-                status_message += "\n\n*🎯 PRO FEATURES:*\n• /trends - Real-time analysis\n• /competitor - Competitor intelligence"
+                
+                if plan_type == 'pro':
+                    status_message += "\n\n*🎯 PRO FEATURES:*\n• /trends - Real-time analysis\n• /competitor - Competitor intelligence"
+                    
+            else:
+                status_message = "❌ Could not fetch your current usage data. Please try again."
                 
         else:
             status_message = """*📊 SUBSCRIPTION STATUS*
@@ -4278,7 +4290,6 @@ def update_message_usage(profile_id, count=1):
             
             # Update ALL possible field names to be safe
             update_data = {
-                'used_messages': current_used + count,
                 'used_messages': current_used + count,
                 'message_count': current_used + count
             }
