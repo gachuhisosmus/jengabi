@@ -2562,6 +2562,112 @@ def process_telegram_message(chat_id, incoming_msg):
     # ✅ Handle session states for regular messages
     return handle_telegram_session_states(phone_number, user_profile, incoming_msg)
 
+# ===== NEW EMERGENCY SALES COMMAND =====
+
+def handle_sales_command(phone_number, user_profile):
+    """Handle emergency sales solutions"""
+    if not check_subscription(user_profile['id']):
+        return "🔒 Emergency sales solutions require a subscription. Use /subscribe to unlock!"
+    
+    session = ensure_user_session(phone_number)
+    session['awaiting_sales_emergency'] = True
+    
+    return """🚨 *EMERGENCY SALES RESCUE*
+
+I'll give you IMMEDIATE solutions for urgent business problems!
+
+What's your sales emergency? Examples:
+• "Cashflow stuck - need quick money"
+• "Inventory not moving for weeks" 
+• "Zero sales this week - emergency!"
+• "Customers not buying - urgent help!"
+• "Debts due soon - need sales now"
+• "Stock expiring - quick clearance needed"
+
+Describe your URGENT sales problem:"""
+
+def generate_emergency_sales_solution(phone_number, user_profile, emergency_desc):
+    """Generate immediate, actionable sales solutions"""
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        
+        safe_profile, safe_emergency = anonymize_for_command('sales', user_profile, emergency_desc)
+        
+        prompt = f"""
+        ACT as an EMERGENCY BUSINESS RESCUE SPECIALIST for African SMEs.
+        
+        BUSINESS CONTEXT:
+        - Business: {safe_profile.get('business_name', 'Small Business')}
+        - Industry: {safe_profile.get('business_type', 'Business')} 
+        - Location: {safe_profile.get('business_location', 'Kenya')}
+        - Products: {', '.join(safe_profile.get('business_products', []))}
+        
+        EMERGENCY: "{safe_emergency}"
+        
+        Provide CRITICAL EMERGENCY RESPONSE with:
+        
+        🚨 IMMEDIATE CASH ACTIONS (Today/Tomorrow):
+        • 3-4 SPECIFIC actions to generate cash within 48 hours
+        • Exact pricing strategies for quick sales
+        • Emergency customer outreach templates
+        • Urgent promotion ideas that WORK NOW
+        
+        💰 QUICK INVENTORY MOVEMENT:
+        • Emergency discount structures
+        • Bundle strategies for stuck stock
+        • Flash sale execution plan
+        • Customer urgency creation tactics
+        
+        📱 EXECUTION TEMPLATES:
+        • Ready-to-send WhatsApp broadcast messages
+        • Social media emergency posts
+        • Customer phone call scripts
+        • Door-to-door sales pitches (if applicable)
+        
+        🎯 AFRICAN MARKET SPECIFICS:
+        • Mobile money payment urgency tactics
+        • Local community leverage strategies
+        • Cultural urgency triggers
+        • Price points that convert IMMEDIATELY
+        
+        Focus on ACTIONABLE, CONCRETE steps with EXACT numbers and READY-TO-USE templates.
+        No theory - only what works NOW in African markets.
+        """
+        
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are an emergency business rescue expert for African SMEs. Provide immediate, actionable cash generation strategies with specific numbers, ready-to-use templates, and urgent execution steps. Focus on solving cashflow and inventory emergencies TODAY."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1000,
+            temperature=0.9,
+        )
+        
+        solution = response.choices[0].message.content.strip()
+        
+        # Add immediate action emphasis
+        enhanced_response = f"""🚨 *EMERGENCY SALES RESCUE PLAN*
+
+*Your Emergency:* {emergency_desc}
+
+{solution}
+
+⚡ *IMMEDIATE NEXT STEPS:*
+1. Pick ONE action and start NOW
+2. Use the ready templates immediately  
+3. Report back in 24 hours for follow-up
+4. Need more urgent help? Reply 'HELP'
+
+💡 *Pro Tip:* Execute ONE thing perfectly rather than trying everything!"""
+
+        return enhanced_response
+        
+    except Exception as e:
+        print(f"Emergency sales error: {e}")
+        return "🚨 I'm analyzing your emergency now. Please try again in 30 seconds or describe your problem more specifically."
+
 def get_telegram_status(user_profile):
     """Get Telegram-friendly status message with full details"""
     try:
@@ -2608,19 +2714,50 @@ Use /subscribe to learn about our plans and start growing your business!"""
         return "Sorry, I couldn't check your status right now. Please try again later."
 
 def get_telegram_help(user_profile):
-    """Get Telegram-specific help message"""
+    """Enhanced help with emergency focus"""
     try:
         has_subscription = check_subscription(user_profile['id'])
-        plan_info = get_user_plan_info(user_profile['id']) if has_subscription else None
-        plan_type = plan_info.get('plan_type') if plan_info else None
         
-        help_message = """*🤖 JENGABI TELEGRAM BOT HELP:*
+        help_message = """*🤖 JENGABI EMERGENCY COMMANDS*
 
-*Core Commands:*
-/start - Welcome message
-/status - Check subscription status
-/profile - Manage business info
-/help - This message"""
+🚨 *URGENT BUSINESS SOLUTIONS:*
+/sales - Emergency cashflow & inventory rescue
+/ideas - Immediate marketing content
+/audit - Business health emergency check"""
+
+        if has_subscription:
+            plan_info = get_user_plan_info(user_profile['id'])
+            plan_type = plan_info.get('plan_type') if plan_info else None
+            
+            help_message += "\n\n*📊 YOUR ACTIVE FEATURES:*"
+            
+            if plan_type in ['growth', 'pro']:
+                help_message += "\n• /strat - Marketing strategies"
+            
+            if plan_type == 'pro':
+                help_message += "\n• /trends - Real-time market alerts"
+                help_message += "\n• /competitor - Competitor intelligence"
+        
+        help_message += "\n\n*🔧 MANAGEMENT:*"
+        help_message += "\n• /profile - Business profile"
+        help_message += "\n• /status - Subscription info" 
+        help_message += "\n• /subscribe - Upgrade plan"
+        help_message += "\n• /help - This message"
+        
+        if not has_subscription:
+            help_message += "\n\n💎 *Subscribe to unlock emergency sales rescue!*"
+        
+        return help_message
+        
+    except Exception as e:
+        return """*🤖 JENGABI BASIC COMMANDS:*
+
+🚨 *URGENT HELP:*
+/sales - Emergency sales solutions (Subscribe)
+/ideas - Marketing content
+/profile - Setup business
+
+Use /subscribe to unlock emergency business rescue!"""
         
         if has_subscription:
             help_message += "\n\n*Your Active Features:*"
@@ -2712,6 +2849,9 @@ Ready to grow your business? 🚀"""
     
     elif command == 'help':
         return get_telegram_help(user_profile)
+    
+    elif command == 'sales':
+        return handle_sales_command(phone_number, user_profile)
     
     else:
         return "Unknown command. Use /help to see available commands."
@@ -2843,9 +2983,15 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
                 'awaiting_qstn': False,
                 'awaiting_4wd': False,
                 'awaiting_product_selection': False,
+                'awaiting_sales_emergency': False, 
                 'continue_data': None
             })
             return "Returning to main menu. Use /help to see available commands."
+        
+    # ✅ Handle sales emergency state
+    elif session.get('awaiting_sales_emergency'):
+        session['awaiting_sales_emergency'] = False
+        return generate_emergency_sales_solution(phone_number, user_profile, incoming_msg)
     
     # ✅ PROPER FIX: Handle M-Pesa subscription flow FIRST
     mpesa_flow = session.get('mpesa_subscription_flow')
@@ -4375,7 +4521,17 @@ def handle_competitor_command(phone_number, user_profile):
 # ===== CORE SYSTEM FUNCTIONS =====
 
 def get_intelligent_response(incoming_msg, user_profile):
-    """Always provide a context-aware response"""
+    """Enhanced with sales emergency detection"""
+    # Detect emergency keywords
+    emergency_keywords = [
+        'emergency', 'urgent', 'cashflow', 'no sales', 'zero sales', 
+        'inventory stuck', 'stock not moving', 'need money now',
+        'debts', 'bills due', 'expiring', 'quick cash', 'help now'
+    ]
+    
+    if any(keyword in incoming_msg.lower() for keyword in emergency_keywords):
+        return "🚨 This sounds urgent! Use the 'sales' command for immediate emergency sales solutions and cash generation strategies."
+    
     # Check if we have business context
     business_context = ""
     if user_profile.get('business_name'):
@@ -4386,10 +4542,10 @@ def get_intelligent_response(incoming_msg, user_profile):
     # Business-aware responses
     business_questions = ['how', 'what', 'when', 'where', 'why', 'can i', 'should i', 'advice']
     if any(q in incoming_msg for q in business_questions) and business_context:
-        return f"I'll help you with that{business_context}! Reply *'ideas'* for social media marketing ideas, *'strat'* for marketing strategies, *'qstn'* for business advices, *'4wd'* for customer message analysis, or ask me anything about your business."
+        return f"I'll help you with that{business_context}! Reply *'ideas'* for social media marketing ideas, *'sales'* for emergency sales solutions, *'qstn'* for business advice, *'4wd'* for customer message analysis, or ask me anything about your business."
     
     # Default helpful response
-    help_options = "Reply *'ideas'* for social media marketing ideas, *'strat'* for strategies, *'qstn'* for business advice, *'4wd'* for customer message analysis, *'status'* for subscription info, *'profile'* to manage your business info, or *'help'* for more options."
+    help_options = "Reply *'ideas'* for social media marketing ideas, *'sales'* for emergency sales solutions, *'qstn'* for business advice, *'4wd'* for customer message analysis, *'status'* for subscription info, *'profile'* to manage your business info, or *'help'* for more options."
     return f"I'm here to help your*{business_context}* business with *social media marketing* and *business analysis*! {help_options}"
 
 def check_subscription(profile_id):
@@ -5118,6 +5274,28 @@ I see you're new here! Let me help you set up your business profile so I can cre
             resp.message("You need a subscription to use business Q&A. Reply 'subscribe' to choose a plan.")
             return str(resp)
         
+        # ✅ Handle SALES command in WhatsApp (EMERGENCY SALES SOLUTIONS)
+    if incoming_msg.strip() == 'sales':
+        if not check_subscription(user_profile['id']):
+            resp.message("🔒 Emergency sales solutions require a subscription. Reply 'subscribe' to unlock!")
+            return str(resp)
+        
+        session['awaiting_sales_emergency'] = True
+        resp.message("""🚨 *EMERGENCY SALES RESCUE*
+
+I'll give you IMMEDIATE solutions for urgent business problems!
+
+What's your sales emergency? Examples:
+• "Cashflow stuck - need quick money"
+• "Inventory not moving for weeks" 
+• "Zero sales this week - emergency!"
+• "Customers not buying - urgent help!"
+• "Debts due soon - need sales now"
+• "Stock expiring - quick clearance needed"
+
+Describe your URGENT sales problem:""")
+        return str(resp) 
+
         # Clear any existing continue_data when starting new QSTN
         session['continue_data'] = None
         
@@ -5133,6 +5311,14 @@ Examples:
 • "How can I attract more customers to my store?"
 
 Ask me anything about your business operations, marketing, or customer service:""")
+        return str(resp)
+    
+        # ✅ Handle sales emergency response in WhatsApp
+    if session.get('awaiting_sales_emergency'):
+        session['awaiting_sales_emergency'] = False
+        emergency_response = generate_emergency_sales_solution(phone_number, user_profile, incoming_msg)
+        resp.message(emergency_response)
+        update_message_usage(user_profile['id'])
         return str(resp)
 
     # ✅ Handle QSTN question input
