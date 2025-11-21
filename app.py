@@ -2680,32 +2680,12 @@ def get_telegram_status(user_profile):
     try:
         has_subscription = check_subscription(user_profile['id'])
         
+        # 🚨 INITIALIZE status_message variable at the top level
+        status_message = ""
+        
         if has_subscription:
             # 🚨 CRITICAL FIX: Get FRESH data from database, not cached user_profile
-        
-            # Get fresh subscription data
-            sub_response = supabase.table('subscriptions').select('*').eq('profile_id', user_profile['id']).eq('is_active', True).execute()
-    
-            if sub_response.data:
-                subscription = sub_response.data[0]
-                end_date = subscription.get('end_date', 'Unknown')
-                days_remaining = "Unknown"
-        
-                # Calculate days remaining
-                if end_date and end_date != 'Unknown':
-                    try:
-                       from datetime import datetime
-                       end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                       days_remaining = (end_dt - datetime.now()).days
-                       if days_remaining < 0:
-                          days_remaining = "EXPIRED"
-                    except:
-                          days_remaining = "Unknown"
-        
-        # ... existing status message code ...
-        
-        
-                fresh_response = supabase.table('profiles').select('*').eq('id', user_profile['id']).execute()
+            fresh_response = supabase.table('profiles').select('*').eq('id', user_profile['id']).execute()
             if fresh_response.data:
                 fresh_data = fresh_response.data[0]
                 
@@ -2723,8 +2703,6 @@ def get_telegram_status(user_profile):
                 # Get plan details from ENHANCED_PLANS
                 plan_details = ENHANCED_PLANS.get(plan_type, ENHANCED_PLANS['basic'])
                 
-                status_message += f"\n\n*📅 SUBSCRIPTION ENDS:* {end_date[:10] if len(end_date) > 10 else end_date}"
-                status_message += f"\n*⏳ DAYS REMAINING:* {days_remaining}"
                 status_message = f"""*📊 YOUR SUBSCRIPTION STATUS*
 
 *Plan:* {plan_type.upper()} Package
@@ -4686,7 +4664,10 @@ def check_subscription(profile_id):
         if end_date_str:
             try:
                 end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
-                if datetime.now() > end_date:
+                current_time = datetime.now(timezone.utc)
+
+
+                if current_time > end_date:
                     # Subscription expired - auto deactivate
                     print(f"🔄 SUBSCRIPTION EXPIRED: Auto-deactivating {profile_id}")
                     supabase.table('subscriptions').update({
@@ -4718,7 +4699,9 @@ def get_user_plan_info(profile_id):
             if end_date_str:
                 try:
                     end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
-                    if datetime.now() > end_date:
+                    current_time = datetime.now(timezone.utc)
+
+                    if current_time > end_date:
                         # Return None for expired subscriptions
                         return None
                 except Exception as e:
