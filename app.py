@@ -2858,6 +2858,11 @@ def handle_telegram_commands(phone_number, user_profile, command):
     print(f"🔍 TELEGRAM COMMAND DEBUG: Processing '{command}'")
     """Handle Telegram commands specifically"""
     session = ensure_user_session(phone_number)
+
+    # 🚨 CLEAR SUBSCRIPTION FLOW FOR ALL COMMANDS EXCEPT 'subscribe'
+    if command != 'subscribe' and session.get('mpesa_subscription_flow'):
+        print(f"🔄 CLEARING MPESA FLOW for command: {command}")
+        clear_mpesa_subscription_flow(session)
     
     # Clear any existing states when starting new commands
     session.update({
@@ -2994,20 +2999,43 @@ Forward or paste a customer message you'd like me to analyze. I'll provide:
 *Paste* or *forward* the customer *message/email* now:"""
 
 def handle_telegram_subscribe_command(phone_number, user_profile):
-    """Handle Telegram subscribe command - ENHANCED MPESA VERSION"""
+    """Handle Telegram subscribe command - WITH SUBSCRIPTION CHECK"""
+    
+    # 🚨 CHECK FOR EXISTING SUBSCRIPTION FIRST
+    has_active_sub = check_subscription(user_profile['id'])
+    if has_active_sub:
+        plan_info = get_user_plan_info(user_profile['id'])
+        current_plan = plan_info.get('plan_type', 'basic') if plan_info else 'basic'
+        
+        # Initialize M-Pesa flow for upgrade
+        session = initialize_mpesa_subscription_flow(phone_number, 'telegram')
+        session['mpesa_subscription_flow']['step'] = 'upgrade_check'
+        
+        return f"""🔄 SUBSCRIPTION MANAGEMENT
+
+You already have an active *{current_plan.upper()}* plan.
+
+Would you like to:
+1. *UPGRADE* to a higher plan
+2. *VIEW* current plan details  
+3. *CANCEL* subscription (ends at period end)
+
+Reply with *1*, *2*, or *3*:"""
+    
+    # No active subscription - proceed with normal flow
     if not user_profile.get('profile_complete'):
         return "Please complete your business profile first using the /profile command."
     
-    # Initialize M-Pesa subscription flow
+    # Initialize M-Pesa subscription flow for new subscription
     session = initialize_mpesa_subscription_flow(phone_number, 'telegram')
     
-    return """💳 *SUBSCRIBE TO JengaBI*
+    return """💳 SUBSCRIBE TO JengaBI
 
 Choose your plan:
 
 1. 🎯 *BASIC* - KSh 130/month or KSh 50/week
    • 5 social media ideas per week
-   • Business Q&A + Customer message analysis and experience improvement
+   • Business Q&A + Customer message analysis
 
 2. 🚀 *GROWTH* - KSh 249/month or KSh 80/week  
    • 15 ideas + Marketing strategies
@@ -3021,12 +3049,12 @@ Choose your plan:
 Reply with *1*, *2*, or *3*:"""
 
 def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
-    """Handle Telegram session states for regular messages - COMPLETE FIX"""
+    """Handle Telegram session states for regular messages - WITH SUBSCRIPTION FLOW FIX"""
     session = ensure_user_session(phone_number)
     
     print(f"🔍 TELEGRAM SESSION STATES: Processing '{incoming_msg}', states: { {k: v for k, v in session.items() if v} }")
 
-    # 🚨 CRITICAL FIX: Handle exit/cancel commands FIRST - before M-Pesa flow
+    # 🚨 PRIORITY 1: Handle exit/cancel commands FIRST - before M-Pesa flow
     clean_msg = incoming_msg.strip().lower()
     exit_commands = ['cancel', 'exit', 'back', 'menu', 'start', 'help', 'status']
     
@@ -3046,24 +3074,62 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
                 'continue_data': None
             })
             return "Returning to main menu. Use /help to see available commands."
-        
-    # ✅ Handle sales emergency state
-    elif session.get('awaiting_sales_emergency'):
-        session['awaiting_sales_emergency'] = False
-        return generate_emergency_sales_solution(phone_number, user_profile, incoming_msg)
     
-    # ✅ PROPER FIX: Handle M-Pesa subscription flow FIRST
+    # 🚨 PRIORITY 2: Handle M-Pesa subscription flow with subscription check
     mpesa_flow = session.get('mpesa_subscription_flow')
     if mpesa_flow:
         current_step = mpesa_flow.get('step', 'plan_selection')
         print(f"🔍 MPESA FLOW: Current step = {current_step}")
 
-        # 🚨 FIX: Handle cancellation within M-Pesa flow
-        if current_step == 'awaiting_payment':
-            if clean_msg in ['cancel', 'exit']:
-                print(f"🔄 CANCELLING AWAITING PAYMENT: {clean_msg}")
+        # Check if user already has active subscription
+        has_active_sub = check_subscription(user_profile['id'])
+        if has_active_sub and current_step == 'plan_selection':
+            plan_info = get_user_plan_info(user_profile['id'])
+            current_plan = plan_info.get('plan_type', 'basic') if plan_info else 'basic'
+            
+            # Offer upgrade instead of new subscription
+            session['mpesa_subscription_flow']['step'] = 'upgrade_check'
+            return f"""🔄 YOU ALREADY HAVE AN ACTIVE SUBSCRIPTION
+
+Current Plan: *{current_plan.upper()}*
+
+Would you like to:
+1. *UPGRADE* to a higher plan
+2. *CANCEL* and keep current plan
+3. *VIEW* current plan details
+
+Reply with *1*, *2*, or *3*:"""
+        
+        # Handle upgrade check step
+        if current_step == 'upgrade_check':
+            if incoming_msg == '1':
+                session['mpesa_subscription_flow']['step'] = 'plan_selection'
+                return """💎 UPGRADE YOUR PLAN
+
+Choose your NEW plan:
+
+1. 🎯 *BASIC* → *GROWTH* - KSh 249/month
+2. 🎯 *BASIC* → *PRO* - KSh 599/month  
+3. 🚀 *GROWTH* → *PRO* - KSh 599/month
+
+Reply with *1*, *2*, or *3*:"""
+            elif incoming_msg == '2':
                 clear_mpesa_subscription_flow(session)
-                return "Payment process cancelled. Returning to main menu."
+                return "Subscription cancelled. Keeping your current plan. Use /status to check your subscription."
+            elif incoming_msg == '3':
+                clear_mpesa_subscription_flow(session)
+                return get_telegram_status(user_profile)
+            else:
+                return "Please choose 1 (UPGRADE), 2 (CANCEL), or 3 (VIEW CURRENT):"
+        
+        # 🚨 FIX: Handle cancellation within M-Pesa flow for all steps
+        if clean_msg in ['cancel', 'exit']:
+            print(f"🔄 CANCELLING MPESA FLOW: {clean_msg}")
+            clear_mpesa_subscription_flow(session)
+            return "Payment process cancelled. Returning to main menu."
+        
+        # Rest of your existing M-Pesa flow handling...
+        # ... (your existing plan_selection, duration_selection, etc. code)
             
             # Check if payment might have been completed
             checkout_id = mpesa_flow.get('mpesa_checkout_id')
