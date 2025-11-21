@@ -3749,6 +3749,45 @@ def check_and_clear_stale_sessions():
         clear_mpesa_subscription_flow(session_data)
         print(f"🔄 Cleared stale session for {phone}")
 
+def cleanup_expired_subscriptions():
+    """Clean up all expired subscriptions - run periodically"""
+    try:
+        from datetime import datetime
+        
+        # Find all active subscriptions that have expired
+        response = supabase.table('subscriptions').select('*').eq('is_active', True).execute()
+        
+        expired_count = 0
+        for subscription in response.data:
+            end_date_str = subscription.get('end_date')
+            if end_date_str:
+                try:
+                    end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
+                    if datetime.now() > end_date:
+                        # Deactivate expired subscription
+                        supabase.table('subscriptions').update({
+                            'is_active': False,
+                            'payment_status': 'expired'
+                        }).eq('id', subscription['id']).execute()
+                        
+                        # Reset user message limits to free tier
+                        supabase.table('profiles').update({
+                            'max_messages': 20,
+                            'used_messages': 0
+                        }).eq('id', subscription['profile_id']).execute()
+                        
+                        expired_count += 1
+                        print(f"🔄 CLEANUP: Deactivated expired subscription for {subscription['profile_id']}")
+                        
+                except Exception as e:
+                    print(f"Error in cleanup for subscription {subscription['id']}: {e}")
+        
+        if expired_count > 0:
+            print(f"✅ CLEANUP: Deactivated {expired_count} expired subscriptions")
+            
+    except Exception as e:
+        print(f"Error in subscription cleanup: {e}")            
+
 # Schedule this to run periodically
 def schedule_session_cleanup():
     """Schedule session cleanup every 30 minutes"""
@@ -4697,45 +4736,6 @@ def get_user_plan_info(profile_id):
         print(f"Error getting plan info: {e}")
         return None
     
-def cleanup_expired_subscriptions():
-    """Clean up all expired subscriptions - run periodically"""
-    try:
-        from datetime import datetime
-        
-        # Find all active subscriptions that have expired
-        response = supabase.table('subscriptions').select('*').eq('is_active', True).execute()
-        
-        expired_count = 0
-        for subscription in response.data:
-            end_date_str = subscription.get('end_date')
-            if end_date_str:
-                try:
-                    end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
-                    if datetime.now() > end_date:
-                        # Deactivate expired subscription
-                        supabase.table('subscriptions').update({
-                            'is_active': False,
-                            'payment_status': 'expired'
-                        }).eq('id', subscription['id']).execute()
-                        
-                        # Reset user message limits to free tier
-                        supabase.table('profiles').update({
-                            'max_messages': 20,
-                            'used_messages': 0
-                        }).eq('id', subscription['profile_id']).execute()
-                        
-                        expired_count += 1
-                        print(f"🔄 CLEANUP: Deactivated expired subscription for {subscription['profile_id']}")
-                        
-                except Exception as e:
-                    print(f"Error in cleanup for subscription {subscription['id']}: {e}")
-        
-        if expired_count > 0:
-            print(f"✅ CLEANUP: Deactivated {expired_count} expired subscriptions")
-            
-    except Exception as e:
-        print(f"Error in subscription cleanup: {e}")    
-
 def handle_user_without_products(phone_number, user_profile, incoming_msg):
     """Handle existing users who don't have products saved"""
     if phone_number not in user_sessions:
