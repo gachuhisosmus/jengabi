@@ -2612,7 +2612,7 @@ def generate_emergency_sales_solution(phone_number, user_profile, emergency_desc
         
         Provide CRITICAL EMERGENCY RESPONSE SPECIFIC TO THEIR PRODUCTS:
         
-        🚨 *PRODUCT-SPECIFIC CASH ACTIONS (Today/Tomorrow):*
+        🚨 *PRODUCT-SPECIFIC* CASH ACTIONS (Today/Tomorrow):*
         • Create emergency bundles using: {products_text}
         • Specific discount structures for their actual products
         • Cross-selling strategies between their products
@@ -4649,7 +4649,7 @@ def get_intelligent_response(incoming_msg, user_profile):
 def check_subscription(profile_id):
     """Checks if the user has an active AND non-expired subscription."""
     try:
-        from datetime import datetime
+        from datetime import datetime, timezone  # 🚨 ADD timezone import
         
         # Get active subscriptions
         response = supabase.table('subscriptions').select('*').eq('profile_id', profile_id).eq('is_active', True).execute()
@@ -4663,10 +4663,10 @@ def check_subscription(profile_id):
         end_date_str = subscription.get('end_date')
         if end_date_str:
             try:
+                # Make both datetimes timezone-aware for comparison
                 end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
-                current_time = datetime.now(timezone.utc)
-
-
+                current_time = datetime.now(timezone.utc)  # 🚨 NOW timezone is defined
+                
                 if current_time > end_date:
                     # Subscription expired - auto deactivate
                     print(f"🔄 SUBSCRIPTION EXPIRED: Auto-deactivating {profile_id}")
@@ -4687,7 +4687,7 @@ def check_subscription(profile_id):
 def get_user_plan_info(profile_id):
     """Gets the user's plan type and output_type - with expiration check."""
     try:
-        from datetime import datetime
+        from datetime import datetime, timezone  # 🚨 ADD timezone import
         
         response = supabase.table('subscriptions').select('*').eq('profile_id', profile_id).eq('is_active', True).execute()
         
@@ -4698,9 +4698,10 @@ def get_user_plan_info(profile_id):
             end_date_str = subscription.get('end_date')
             if end_date_str:
                 try:
+                    # Make both datetimes timezone-aware
                     end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
-                    current_time = datetime.now(timezone.utc)
-
+                    current_time = datetime.now(timezone.utc)  # 🚨 NOW timezone is defined
+                    
                     if current_time > end_date:
                         # Return None for expired subscriptions
                         return None
