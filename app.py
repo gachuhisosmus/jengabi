@@ -2869,6 +2869,7 @@ def handle_telegram_commands(phone_number, user_profile, command):
         'awaiting_qstn': False,
         'awaiting_4wd': False,
         'awaiting_product_selection': False,
+        'awaiting_sales_emergency': False,
         'continue_data': None
     })
     
@@ -3081,6 +3082,22 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
                 'continue_data': None
             })
             return "Returning to main menu. Use /help to see available commands."
+        
+            # 🆕 CRITICAL FIX: Handle sales emergency response
+    if session.get('awaiting_sales_emergency'):
+        print(f"🚨 SALES EMERGENCY: Processing emergency description: '{incoming_msg}'")
+        session['awaiting_sales_emergency'] = False
+        update_message_usage(user_profile['id'])
+        
+        emergency_desc = incoming_msg.strip()
+        if not emergency_desc or len(emergency_desc) < 5:
+            return "Please describe your sales emergency in more detail (at least 5 characters). Reply 'sales' to try again."
+        
+        print("🚨 SALES EMERGENCY: Generating emergency solution...")
+        emergency_response = generate_emergency_sales_solution(phone_number, user_profile, emergency_desc)
+        print(f"🚨 SALES EMERGENCY: Response generated, length: {len(emergency_response)}")
+        
+        return emergency_response
     
     # 🚨 PRIORITY 2: Handle M-Pesa subscription flow with subscription check
     mpesa_flow = session.get('mpesa_subscription_flow')
