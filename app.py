@@ -3013,12 +3013,19 @@ def handle_telegram_subscribe_command(phone_number, user_profile):
         
         return f"""🔄 SUBSCRIPTION MANAGEMENT
 
+
+
 You already have an active *{current_plan.upper()}* plan.
 
 Would you like to:
-1. *UPGRADE* to a higher plan
+1. *UPGRADE* to access more features
 2. *VIEW* current plan details  
-3. *CANCEL* subscription (ends at period end)
+3. *CANCEL* and return to main menu
+
+💡 *Upgrade Benefits:*
+• More content generations per month
+• Advanced features unlocked
+• Better value for your business
 
 Reply with *1*, *2*, or *3*:"""
     
@@ -3102,25 +3109,108 @@ Reply with *1*, *2*, or *3*:"""
         
         # Handle upgrade check step
         if current_step == 'upgrade_check':
-            if incoming_msg == '1':
-                session['mpesa_subscription_flow']['step'] = 'plan_selection'
-                return """💎 UPGRADE YOUR PLAN
+            plan_info = get_user_plan_info(user_profile['id'])
+            current_plan = plan_info.get('plan_type', 'basic') if plan_info else 'basic'
 
-Choose your NEW plan:
+            if incoming_msg == '1':  # UPGRADE
+                # Store current plan for offset calculation
+                session['mpesa_subscription_flow']['current_plan'] = current_plan
+                session['mpesa_subscription_flow']['step'] = 'upgrade_plan_selection'
 
-1. 🎯 *BASIC* → *GROWTH* - KSh 249/month
-2. 🎯 *BASIC* → *PRO* - KSh 599/month  
-3. 🚀 *GROWTH* → *PRO* - KSh 599/month
+                if current_plan == 'basic':
+                   return """💎 UPGRADE FROM BASIC PLAN
 
-Reply with *1*, *2*, or *3*:"""
-            elif incoming_msg == '2':
+        Choose your NEW plan:
+
+        1. 🚀 *GROWTH* - KSh 249/month or KSh 80/week
+        • 15 ideas/week + Marketing strategies  
+        • All Basic features
+
+        2. 💎 *PRO* - KSh 599/month or KSh 150/week
+        • Unlimited ideas + Advanced strategies
+        • Real-time trends + Competitor insights
+        • All Growth features
+
+        Reply with *1* or *2*:"""
+                else:  # growth → pro
+                    return """💎 UPGRADE FROM GROWTH PLAN
+
+        Upgrade to *PRO* Plan:
+
+        🚀 *PRO* - KSh 599/month or KSh 150/week
+        • Unlimited ideas + Advanced strategies
+        • Real-time trends + Competitor insights  
+        • All Growth features  
+
+        Reply *1* to upgrade or *2* to cancel:"""
+            elif incoming_msg == '2':  # CANCEL
+               clear_mpesa_subscription_flow(session)
+               return "Upgrade cancelled. Keeping your current plan. Use /status to check your subscription."
+
+            elif incoming_msg == '3':  # VIEW CURRENT
                 clear_mpesa_subscription_flow(session)
-                return "Subscription cancelled. Keeping your current plan. Use /status to check your subscription."
-            elif incoming_msg == '3':
-                clear_mpesa_subscription_flow(session)
-                return get_telegram_status(user_profile)
+                return get_telegram_status(user_profile)  
+
             else:
-                return "Please choose 1 (UPGRADE), 2 (CANCEL), or 3 (VIEW CURRENT):"
+                return "Please choose 1 (UPGRADE), 2 (CANCEL), or 3 (VIEW CURRENT):"    
+
+        # Handle upgrade plan selection
+        elif current_step == 'upgrade_plan_selection':
+            current_plan = mpesa_flow.get('current_plan', 'basic')
+
+            if incoming_msg == '1':  # Selected Growth (from Basic) or Pro (from Growth)
+                if current_plan == 'basic':
+                    selected_plan = 'growth'
+            else:  # growth → pro
+                 selected_plan = 'pro'   
+
+            session['mpesa_subscription_flow']['selected_plan'] = selected_plan
+            session['mpesa_subscription_flow']['step'] = 'duration_selection'  # Use existing duration flow
+
+            plan_info = ENHANCED_PLANS[selected_plan]
+            return f"""✅ Selected *UPGRADE to {selected_plan.upper()} Plan*
+
+        *Now choose payment duration:*
+
+        1. ⏳ *1 Week* - KSh {plan_info['weekly_price']}
+        2. 📅 *1 Month* - KSh {plan_info['monthly_price']} 
+        3. 🗓️ *3 Months* - KSh {round(plan_info['monthly_price'] * 3 * 0.9)} (Save 10%)
+        4. 📆 *6 Months* - KSh {round(plan_info['monthly_price'] * 6 * 0.85)} (Save 15%)
+        5. 🎊 *12 Months* - KSh {round(plan_info['monthly_price'] * 12 * 0.8)} (Save 20%)
+        6. 🔢 *Custom Months* (2-11) - 5% discount
+
+       💡 *Upgrade Benefit:* You get full access to new features immediately!
+
+       Reply with *1-6*:"""
+           
+        elif incoming_msg == '2' and current_plan == 'basic':  # Selected Pro from Basic
+            selected_plan = 'pro'
+            session['mpesa_subscription_flow']['selected_plan'] = selected_plan
+            session['mpesa_subscription_flow']['step'] = 'duration_selection'  # Use existing duration flow
+
+            plan_info = ENHANCED_PLANS[selected_plan]
+            return f"""✅ Selected *UPGRADE to PRO Plan*
+
+        *Now choose payment duration:*
+
+        1. ⏳ *1 Week* - KSh {plan_info['weekly_price']}
+        2. 📅 *1 Month* - KSh {plan_info['monthly_price']} 
+        3. 🗓️ *3 Months* - KSh {round(plan_info['monthly_price'] * 3 * 0.9)} (Save 10%)
+        4. 📆 *6 Months* - KSh {round(plan_info['monthly_price'] * 6 * 0.85)} (Save 15%)
+        5. 🎊 *12 Months* - KSh {round(plan_info['monthly_price'] * 12 * 0.8)} (Save 20%)
+        6. 🔢 *Custom Months* (2-11) - 5% discount
+
+        💡 *Upgrade Benefit:* You get full access to PRO features immediately!  
+
+        Reply with *1-6*:"""  
+             
+        elif incoming_msg == '2' and current_plan == 'growth':  # Cancelled from Growth
+            clear_mpesa_subscription_flow(session)
+            return "Upgrade cancelled. Keeping your Growth plan. Use /status to check your subscription."
+    
+        else:
+            return "Please choose a valid option."
+     
         
         # 🚨 FIX: Handle cancellation within M-Pesa flow for all steps
         if clean_msg in ['cancel', 'exit']:
@@ -3128,9 +3218,7 @@ Reply with *1*, *2*, or *3*:"""
             clear_mpesa_subscription_flow(session)
             return "Payment process cancelled. Returning to main menu."
         
-        # Rest of your existing M-Pesa flow handling...
-        # ... (your existing plan_selection, duration_selection, etc. code)
-            
+                
             # Check if payment might have been completed
             checkout_id = mpesa_flow.get('mpesa_checkout_id')
             if checkout_id:
@@ -3313,6 +3401,7 @@ Reply *'PAY'* to initiate M-Pesa payment or *'CANCEL'* to abort."""
     # ✅ Handle existing session states (QSTN, 4WD, product selection)
     if session.get('awaiting_qstn'):
         session['awaiting_qstn'] = False
+        update_message_usage(user_profile['id'])
         question = incoming_msg.strip()
         if not question or len(question) < 5:
             return "Please ask a specific business question (at least 5 characters). Use /qstn to try again."
@@ -5583,7 +5672,8 @@ Examples:
         print(f"🚨 QSTN FOLLOW-UP: Processing question: '{incoming_msg}'")
         
         # CRITICAL: Clear state immediately
-        session['awaiting_qstn'] = False 
+        session['awaiting_qstn'] = False
+        update_message_usage(user_profile['id']) 
         
         question = incoming_msg.strip()
         
