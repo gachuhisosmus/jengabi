@@ -1396,7 +1396,7 @@ def get_duration_display(duration_type, custom_months=None):
 # ===== ENHANCED MPESA SUBSCRIPTION ACTIVATION =====
 
 def activate_enhanced_subscription(chat_phone, payment_data, subscription_data):
-    """Activate user subscription with enhanced M-Pesa data"""
+    """Activate user subscription with enhanced M-Pesa data - TELEGRAM FOCUSED"""
     try:
         # Find user profile using chat phone number
         response = supabase.table('profiles').select('*').eq('phone_number', chat_phone).execute()
@@ -1450,19 +1450,19 @@ def activate_enhanced_subscription(chat_phone, payment_data, subscription_data):
             # Create new subscription
             supabase.table('subscriptions').insert(subscription_record).execute()
         
-        # 🚨 UPDATE: Use correct message limits from PLAN_MAX_MESSAGES
+        # 🚨 TELEGRAM FIX: Use correct message limits from PLAN_MAX_MESSAGES
         plan_type = subscription_data['plan_type']
         max_messages = PLAN_MAX_MESSAGES.get(plan_type, 20)
         
         supabase.table('profiles').update({
             'max_messages': max_messages,
-            'used_messages': 0
+            'used_messages': 0  # Reset usage for new subscription
         }).eq('id', profile_id).execute()
         
         # Log M-Pesa transaction
         log_mpesa_transaction(profile_id, payment_data, subscription_data)
         
-        print(f"✅ ENHANCED SUBSCRIPTION ACTIVATED: {subscription_data['plan_type']} plan for {chat_phone} with {max_messages} messages")
+        print(f"✅ TELEGRAM SUBSCRIPTION ACTIVATED: {subscription_data['plan_type']} plan for {chat_phone} with {max_messages} messages")
         return True
         
     except Exception as e:
@@ -2714,29 +2714,25 @@ def generate_emergency_sales_solution(phone_number, user_profile, emergency_desc
         return "🚨 I'm analyzing your emergency now. Please try again in 30 seconds or describe your problem more specifically."
 
 def get_telegram_status(user_profile):
-    """Get Telegram-friendly status message with full details"""
+    """Get Telegram-friendly status message with correct plan limits"""
     try:
         has_subscription = check_subscription(user_profile['id'])
         
-        # 🚨 INITIALIZE status_message variable at the top level
-        status_message = ""
-        
         if has_subscription:
-            # 🚨 CRITICAL FIX: Get FRESH data from database, not cached user_profile
+            # Get FRESH data from database
             fresh_response = supabase.table('profiles').select('*').eq('id', user_profile['id']).execute()
             if fresh_response.data:
                 fresh_data = fresh_response.data[0]
                 
                 plan_info = get_user_plan_info(user_profile['id'])
-                plan_type = plan_info.get('plan_type', 'unknown') if plan_info else 'unknown'
-                output_type = plan_info.get('output_type', 'ideas') if plan_info else 'ideas'
+                plan_type = plan_info.get('plan_type', 'basic') if plan_info else 'basic'
                 
-                # 🚨 USE FRESH DATA, not cached user_profile
+                # 🚨 USE CORRECT PLAN LIMITS
+                plan_limit = PLAN_MAX_MESSAGES.get(plan_type, 20)
                 used_messages = fresh_data.get('used_messages', 0)
-                max_messages = fresh_data.get('max_messages', 99999)
-                remaining = max(0, max_messages - used_messages)
+                remaining = max(0, plan_limit - used_messages)
                 
-                print(f"🔄 STATUS: Fresh data - Used: {used_messages}, Max: {max_messages}, Remaining: {remaining}")
+                print(f"🔄 TELEGRAM STATUS: Plan: {plan_type}, Used: {used_messages}, Max: {plan_limit}, Remaining: {remaining}")
                 
                 # Get plan details from ENHANCED_PLANS
                 plan_details = ENHANCED_PLANS.get(plan_type, ENHANCED_PLANS['basic'])
@@ -2746,7 +2742,7 @@ def get_telegram_status(user_profile):
 *Plan:* {plan_type.upper()} Package
 *Price:* KSh {plan_details['monthly_price']}/month
 *Benefits:* {plan_details['description']}
-*Content Type:* {output_type.replace('_', ' ').title()}
+*Message Limit:* {plan_limit} messages per month
 
 *📈 USAGE THIS MONTH:*
 *Used:* {used_messages} AI generations
@@ -4392,7 +4388,7 @@ def get_remaining_messages(profile_id):
         return 20  # Fallback
 
 def update_message_usage(profile_id, count=1):
-    """Update message usage count with enhanced debugging"""
+    """Update message usage count with enhanced debugging - TELEGRAM FOCUSED"""
     try:
         # First get current value
         response = supabase.table('profiles').select('*').eq('id', profile_id).execute()
@@ -4403,8 +4399,8 @@ def update_message_usage(profile_id, count=1):
             max_msgs = data.get('max_messages', 20)
             current_used = int(current_used) if current_used is not None else 0
             
-            # 🚨 ENHANCED DEBUGGING
-            print(f"🔄 MESSAGE COUNT: User {profile_id}")
+            # 🚨 ENHANCED DEBUGGING FOR TELEGRAM
+            print(f"🔄 TELEGRAM MESSAGE COUNT: User {profile_id}")
             print(f"🔄 BEFORE: Used: {current_used}/{max_msgs}, Remaining: {max_msgs - current_used}")
             
             new_used = current_used + count
@@ -4417,7 +4413,7 @@ def update_message_usage(profile_id, count=1):
             supabase.table('profiles').update(update_data).eq('id', profile_id).execute()
             
             print(f"🔄 AFTER: Used: {new_used}/{max_msgs}, Remaining: {remaining}")
-            print(f"🔄 MESSAGE COUNT: Updated successfully")
+            print(f"🔄 TELEGRAM MESSAGE COUNT: Updated successfully")
             
     except Exception as e:
         print(f"❌ Error updating message usage: {e}")
