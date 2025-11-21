@@ -2449,7 +2449,7 @@ def send_telegram_message(chat_id, text):
     # ✅ ENHANCED: Prevent empty or problematic responses
     if not text or len(text.strip()) == 0:
         print(f"❌ TELEGRAM EMPTY RESPONSE: Attempted to send empty message to {chat_id}")
-        text = "I'm here to help your business! Try '/profile' to manage your business info, '/ideas' for marketing content, or '/help' for all options."
+        text = "I'm here to help your business! Try '/profile' to manage your business info, '/ideas' for marketing content, '/sales' to get quick sales solutions, or '/help' for all options."
     
     # Ensure response has minimum length and content
     if len(text.strip()) < 10:
