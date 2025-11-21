@@ -519,7 +519,7 @@ def get_mpesa_error_message(result_code):
     return error_messages.get(result_code, "Payment failed - please try again")
 
 def activate_subscription(phone_number, plan_type, mpesa_receipt=None, amount=None):
-    """Activate user subscription after successful payment"""
+    """Activate user subscription with CORRECT message limits"""
     try:
         # Find user profile
         response = supabase.table('profiles').select('*').eq('phone_number', phone_number).execute()
@@ -530,6 +530,9 @@ def activate_subscription(phone_number, plan_type, mpesa_receipt=None, amount=No
         user_profile = response.data[0]
         profile_id = user_profile['id']
         
+        # 🚨 USE CORRECT MESSAGE LIMITS
+        max_messages = PLAN_MAX_MESSAGES.get(plan_type, 20)
+        
         # Create or update subscription
         subscription_data = {
             'profile_id': profile_id,
@@ -538,8 +541,8 @@ def activate_subscription(phone_number, plan_type, mpesa_receipt=None, amount=No
             'payment_status': 'completed',
             'mpesa_receipt_number': mpesa_receipt,
             'amount_paid': amount,
-            'start_date': datetime.datetime.now().isoformat(),
-            'end_date': (datetime.datetime.now() + datetime.timedelta(days=30)).isoformat()
+            'start_date': datetime.now().isoformat(),
+            'end_date': (datetime.now() + timedelta(days=30)).isoformat()
         }
         
         # Check if subscription exists
@@ -551,7 +554,13 @@ def activate_subscription(phone_number, plan_type, mpesa_receipt=None, amount=No
             # Create new subscription
             supabase.table('subscriptions').insert(subscription_data).execute()
         
-        print(f"✅ SUBSCRIPTION ACTIVATED: {plan_type} plan for {phone_number}")
+        # 🚨 UPDATE USER MESSAGE LIMITS CORRECTLY
+        supabase.table('profiles').update({
+            'max_messages': max_messages,
+            'used_messages': 0  # Reset usage for new subscription
+        }).eq('id', profile_id).execute()
+        
+        print(f"✅ SUBSCRIPTION ACTIVATED: {plan_type} plan for {phone_number} with {max_messages} messages")
         return True
         
     except Exception as e:
@@ -1441,8 +1450,10 @@ def activate_enhanced_subscription(chat_phone, payment_data, subscription_data):
             # Create new subscription
             supabase.table('subscriptions').insert(subscription_record).execute()
         
-        # Update user's message limits based on plan
-        max_messages = 99999 if subscription_data['plan_type'] == 'pro' else 20
+        # 🚨 UPDATE: Use correct message limits from PLAN_MAX_MESSAGES
+        plan_type = subscription_data['plan_type']
+        max_messages = PLAN_MAX_MESSAGES.get(plan_type, 20)
+        
         supabase.table('profiles').update({
             'max_messages': max_messages,
             'used_messages': 0
@@ -1451,7 +1462,7 @@ def activate_enhanced_subscription(chat_phone, payment_data, subscription_data):
         # Log M-Pesa transaction
         log_mpesa_transaction(profile_id, payment_data, subscription_data)
         
-        print(f"✅ ENHANCED SUBSCRIPTION ACTIVATED: {subscription_data['plan_type']} plan for {chat_phone}")
+        print(f"✅ ENHANCED SUBSCRIPTION ACTIVATED: {subscription_data['plan_type']} plan for {chat_phone} with {max_messages} messages")
         return True
         
     except Exception as e:
@@ -1564,6 +1575,14 @@ ENHANCED_PLANS = {
     }
 }
 
+# ===== PLAN MESSAGE LIMITS =====
+PLAN_MAX_MESSAGES = {
+    'basic': 20,      # 5 messages/week × 4 weeks
+    'growth': 60,     # 15 messages/week × 4 weeks  
+    'boost': 100,     # 25 messages/week × 4 weeks
+    'pro': 99999      # Unlimited
+}
+
 MPESA_DURATIONS = {
     'weekly': {
         'type': 'weekly',
@@ -1630,16 +1649,6 @@ PAYMENT_STATUS = {
     'FAILED': 'failed',
     'CANCELLED': 'cancelled'
 }
-
-# Payment status constants
-PAYMENT_STATUS = {
-    'PENDING': 'pending',
-    'PROCESSING': 'processing', 
-    'COMPLETED': 'completed',
-    'FAILED': 'failed',
-    'CANCELLED': 'cancelled'
-}
-
 # ===== MPESA CORE FUNCTIONS TESTING =====
 
 @app.route('/test-mpesa-core', methods=['GET'])
@@ -2272,6 +2281,35 @@ def security_test_full():
         ],
         "timestamp": datetime.now().isoformat()
     })
+
+# ===== FIX USER LIMITS ROUTE =====
+@app.route('/fix-user-limits', methods=['GET'])
+def fix_user_limits():
+    """Fix existing users with incorrect message limits"""
+    try:
+        # Fix WhatsApp user (Basic plan should have 20, not 99999)
+        whatsapp_user = '04521eea-be1d-4415-90e1-af23d52273be'
+        supabase.table('profiles').update({
+            'max_messages': 20,  # Basic plan limit
+            'used_messages': 0   # Reset for accurate counting
+        }).eq('id', whatsapp_user).execute()
+        
+        # Ensure Telegram user has correct Basic plan limits
+        telegram_user = 'fbf79a58-4840-4139-a881-8787740dfdf8'
+        supabase.table('profiles').update({
+            'max_messages': 20,  # Basic plan limit
+            'used_messages': 0   # Reset for accurate counting
+        }).eq('id', telegram_user).execute()
+        
+        return jsonify({
+            'status': 'user_limits_fixed',
+            'whatsapp_user': 'set to 20 messages (Basic)',
+            'telegram_user': 'set to 20 messages (Basic)',
+            'note': 'Run /status on both platforms to verify'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # ===== MPESA CALLBACK ROUTE =====
 @app.route('/mpesa-callback', methods=['POST'])
@@ -4336,45 +4374,53 @@ def get_remaining_messages(profile_id):
         if response.data:
             data = response.data[0]
             
-            # FIX: Handle ALL possible field name variations from your logs
-            used = data.get('used_messages') or data.get('used_messages') or data.get('message_count', 0)
-            max_msgs = data.get('max_messages') or data.get('has_measaged') or data.get('max_message', 99999)
+            # Use the correct field names
+            used = data.get('used_messages', 0)
+            max_msgs = data.get('max_messages', 20)
             
             # Ensure they are integers
             used = int(used) if used is not None else 0
-            max_msgs = int(max_msgs) if max_msgs is not None else 99999
+            max_msgs = int(max_msgs) if max_msgs is not None else 20
             
             remaining = max(0, max_msgs - used)
-            print(f"DEBUG: User {profile_id} - Used: {used}, Max: {max_msgs}, Remaining: {remaining}")
+            print(f"🔄 REMAINING MESSAGES: User {profile_id} - Used: {used}, Max: {max_msgs}, Remaining: {remaining}")
             return remaining
             
-        return 99999  # Fallback for Pro users
+        return 20  # Default fallback
     except Exception as e:
-        print(f"Error getting remaining messages: {e}")
-        return 99999  # Fallback to allow messages
+        print(f"❌ Error getting remaining messages: {e}")
+        return 20  # Fallback
 
 def update_message_usage(profile_id, count=1):
-    """Update message usage count with error handling"""
+    """Update message usage count with enhanced debugging"""
     try:
         # First get current value
         response = supabase.table('profiles').select('*').eq('id', profile_id).execute()
         if response.data:
             data = response.data[0]
             
-            # FIX: Handle ALL possible field name variations
-            current_used = data.get('used_messages') or data.get('used_messages') or data.get('message_count', 0)
+            current_used = data.get('used_messages', 0)
+            max_msgs = data.get('max_messages', 20)
             current_used = int(current_used) if current_used is not None else 0
             
-            # Update ALL possible field names to be safe
+            # 🚨 ENHANCED DEBUGGING
+            print(f"🔄 MESSAGE COUNT: User {profile_id}")
+            print(f"🔄 BEFORE: Used: {current_used}/{max_msgs}, Remaining: {max_msgs - current_used}")
+            
+            new_used = current_used + count
+            remaining = max(0, max_msgs - new_used)
+            
             update_data = {
-                'used_messages': current_used + count,
-                'message_count': current_used + count
+                'used_messages': new_used
             }
             
             supabase.table('profiles').update(update_data).eq('id', profile_id).execute()
-            print(f"DEBUG: Updated message usage for {profile_id} to {current_used + count}")
+            
+            print(f"🔄 AFTER: Used: {new_used}/{max_msgs}, Remaining: {remaining}")
+            print(f"🔄 MESSAGE COUNT: Updated successfully")
+            
     except Exception as e:
-        print(f"Error updating message usage: {e}")
+        print(f"❌ Error updating message usage: {e}")
         
 def truncate_message(content, max_length=1500):
     """Ensure messages don't exceed WhatsApp limits"""
