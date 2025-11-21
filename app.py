@@ -974,9 +974,9 @@ def generate_account_reference(plan_type, duration_type, custom_months=None):
     duration_suffix = MPESA_DURATIONS[duration_type]['mpesa_suffix']
     
     if duration_type == 'custom' and custom_months:
-        return f"JENGABI{plan_code}C{custom_months}"
+        return f"JengaBI{plan_code}C{custom_months}"
     else:
-        return f"JENGABI{plan_code}{duration_suffix}"
+        return f"JengaBI{plan_code}{duration_suffix}"
 
 def calculate_next_renewal_date(duration_days):
     """Calculate subscription end date"""
@@ -1541,7 +1541,7 @@ ENHANCED_PLANS = {
     'basic': {
         'monthly_price': 130,
         'weekly_price': 50,
-        'description': '5 social media ideas per week + Business Q&A + Customer message analysis',
+        'description': '5 social media ideas per week + Business Q&A + Customer message analysis and experience improvement',
         'commands': ['ideas', '4wd', 'qstn'],
         'output_type': 'ideas',
         'mpesa_code': 'BASIC'
@@ -1549,7 +1549,7 @@ ENHANCED_PLANS = {
     'growth': {
         'monthly_price': 249,
         'weekly_price': 80,
-        'description': '15 ideas + Marketing strategies + Business Q&A + Customer message analysis',
+        'description': '15 ideas + Marketing strategies + Business Q&A + Customer message analysis and exeperience improvement',
         'commands': ['ideas', 'strat', '4wd', 'qstn'],
         'output_type': 'ideas_strategy',
         'mpesa_code': 'GROWTH'
@@ -1557,7 +1557,7 @@ ENHANCED_PLANS = {
     'pro': {
         'monthly_price': 599,
         'weekly_price': 150,
-        'description': 'Unlimited ideas + Full strategies + Real-time trends + Competitor insights + Business Q&A + Customer message analysis',
+        'description': 'Unlimited ideas + Full strategies + Real-time trends + Competitor insights + Business Q&A + Customer message analysis and experience improvement',
         'commands': ['ideas', 'strat', 'trends', 'competitor', '4wd', 'qstn'],
         'output_type': 'strategies',
         'mpesa_code': 'PRO'
@@ -2575,7 +2575,7 @@ def handle_sales_command(phone_number, user_profile):
     
     return """🚨 *EMERGENCY SALES RESCUE*
 
-I'll give you IMMEDIATE solutions for urgent business problems!
+I'll give you *IMMEDIATE* solutions for urgent business problems!
 
 What's your sales emergency? Examples:
 • "Cashflow stuck - need quick money"
@@ -2585,7 +2585,7 @@ What's your sales emergency? Examples:
 • "Debts due soon - need sales now"
 • "Stock expiring - quick clearance needed"
 
-Describe your URGENT sales problem:"""
+Describe your *URGENT* sales problem:"""
 
 def generate_emergency_sales_solution(phone_number, user_profile, emergency_desc):
     """Generate immediate, actionable sales solutions USING BUSINESS PRODUCTS"""
@@ -2725,12 +2725,13 @@ def get_telegram_help(user_profile):
     try:
         has_subscription = check_subscription(user_profile['id'])
         
-        help_message = """*🤖 JENGABI EMERGENCY COMMANDS*
+        help_message = """*🤖 JengaBI SOLUTION COMMANDS*
 
-🚨 *URGENT BUSINESS SOLUTIONS:*
+🚨 *BUSINESS INTELLIGENCE SOLUTIONS:*
 /sales - Emergency cashflow & inventory rescue
 /ideas - Immediate marketing content
-/audit - Business health emergency check"""
+/4wd   - Customer message/email analysis and experience improvement
+/qstn  - Business advice & questions"""
 
         if has_subscription:
             plan_info = get_user_plan_info(user_profile['id'])
@@ -2745,7 +2746,7 @@ def get_telegram_help(user_profile):
                 help_message += "\n• /trends - Real-time market alerts"
                 help_message += "\n• /competitor - Competitor intelligence"
         
-        help_message += "\n\n*🔧 MANAGEMENT:*"
+        help_message += "\n\n*🔧 MANAGEMENT COMMANDS:*"
         help_message += "\n• /profile - Business profile"
         help_message += "\n• /status - Subscription info" 
         help_message += "\n• /subscribe - Upgrade plan"
@@ -2757,7 +2758,7 @@ def get_telegram_help(user_profile):
         return help_message
         
     except Exception as e:
-        return """*🤖 JENGABI BASIC COMMANDS:*
+        return """*🤖 JengaBI BASIC COMMANDS:*
 
 🚨 *URGENT HELP:*
 /sales - Emergency sales solutions (Subscribe)
@@ -2771,7 +2772,7 @@ Use /subscribe to unlock emergency business rescue!"""
             
             # Basic features for all subscribers
             help_message += "\n• /qstn - Business advice & questions"
-            help_message += "\n• /4wd - Customer message analysis"
+            help_message += "\n• /4wd - Customer message analysis and experience improvement"
             
             if plan_type in ['growth', 'pro']:
                 help_message += "\n• /strat - Marketing strategies"
@@ -2793,7 +2794,7 @@ Use /subscribe to unlock emergency business rescue!"""
         
     except Exception as e:
         print(f"Telegram help error: {e}")
-        return """*🤖 JENGABI TELEGRAM BOT HELP:*
+        return """*🤖 JengaBI TELEGRAM BOT HELP:*
 
 *Available Commands:*
 /start - Welcome message  
@@ -2922,7 +2923,7 @@ Examples:
 • "What's the best way to handle customer complaints?" 
 • "How can I attract more customers to my store?"
 
-Ask me anything about your business operations, marketing, or customer service:"""
+*Ask me anything about your business operations, marketing, or customer service:*"""
 
 def handle_telegram_4wd_command(phone_number, user_profile):
     """Handle Telegram 4wd command"""
@@ -2932,7 +2933,7 @@ def handle_telegram_4wd_command(phone_number, user_profile):
         return "You need a subscription to analyze customer messages. Use /subscribe to choose a plan."
     
     session['awaiting_4wd'] = True
-    return """*📞 CUSTOMER MESSAGE ANALYSIS*
+    return """*📞 CUSTOMER MESSAGE ANALYSIS AND EXPERIENCE IMPROVEMENT*
 
 Forward or paste a customer message you'd like me to analyze. I'll provide:
 
@@ -2941,7 +2942,7 @@ Forward or paste a customer message you'd like me to analyze. I'll provide:
 • Response recommendations
 • Business improvement tips
 
-Paste or forward the customer message now:"""
+*Paste* or *forward* the customer *message/email* now:"""
 
 def handle_telegram_subscribe_command(phone_number, user_profile):
     """Handle Telegram subscribe command - ENHANCED MPESA VERSION"""
@@ -2951,13 +2952,13 @@ def handle_telegram_subscribe_command(phone_number, user_profile):
     # Initialize M-Pesa subscription flow
     session = initialize_mpesa_subscription_flow(phone_number, 'telegram')
     
-    return """💳 *SUBSCRIBE TO JENGABI*
+    return """💳 *SUBSCRIBE TO JengaBI*
 
 Choose your plan:
 
 1. 🎯 *BASIC* - KSh 130/month or KSh 50/week
    • 5 social media ideas per week
-   • Business Q&A + Customer message analysis
+   • Business Q&A + Customer message analysis and experience improvement
 
 2. 🚀 *GROWTH* - KSh 249/month or KSh 80/week  
    • 15 ideas + Marketing strategies
@@ -3864,7 +3865,7 @@ Now I can create personalized social media marketing content specifically for *{
 • Reply *'ideas'* - Generate social media marketing ideas
 • Reply *'strat'* - Get marketing strategies (Growth/Pro plans)
 • Reply *'qstn'* - Business advice & questions  
-• Reply *'4wd'* - Customer message analysis
+• Reply *'4wd'* - Customer message analysis and experience improvement
 • Reply *'subscribe'* - Choose a plan to unlock all features
 • Reply *'profile'* - Manage your business info
 
@@ -4401,22 +4402,22 @@ def handle_4wd_command(phone_number, user_profile, customer_message):
         
         Provide a comprehensive analysis with:
         
-        🎭 SENTIMENT ANALYSIS:
+        🎭 *SENTIMENT ANALYSIS:*
         - Overall sentiment (positive/negative/neutral)
         - Key emotions detected
         - Urgency level
         
-        🔍 KEY INSIGHTS:
+        🔍 *KEY INSIGHTS:*
         - Main customer need or concern
         - Underlying issues (if any)
         - Customer expectations
         
-        💡 RECOMMENDED RESPONSE:
+        💡 *RECOMMENDED RESPONSE:*
         - 3 professional response options
         - Tone recommendations
         - Follow-up actions
         
-        🚀 BUSINESS IMPROVEMENTS:
+        🚀 *BUSINESS IMPROVEMENTS:*
         - 2 actionable insights for business improvement
         - Potential service/product enhancements
         
@@ -4438,7 +4439,7 @@ def handle_4wd_command(phone_number, user_profile, customer_message):
         
         # Format response with ORIGINAL business name for personalization
         original_business_name = user_profile.get('business_name', 'Your Business')
-        formatted_response = f"""*📞 CUSTOMER MESSAGE ANALYSIS FOR {original_business_name.upper()}*
+        formatted_response = f"""*📞 CUSTOMER MESSAGE ANALYSIS AND EXPERIENCE IMPROVEMENT FOR {original_business_name.upper()}*
 
 *Customer Message:*
 "{customer_message}"
@@ -4551,10 +4552,10 @@ def get_intelligent_response(incoming_msg, user_profile):
     # Business-aware responses
     business_questions = ['how', 'what', 'when', 'where', 'why', 'can i', 'should i', 'advice']
     if any(q in incoming_msg for q in business_questions) and business_context:
-        return f"I'll help you with that{business_context}! Reply *'ideas'* for social media marketing ideas, *'sales'* for emergency sales solutions, *'qstn'* for business advice, *'4wd'* for customer message analysis, or ask me anything about your business."
+        return f"I'll help you with that{business_context}! Reply *'ideas'* for social media marketing ideas, *'sales'* for emergency sales solutions, *'qstn'* for business advice, *'4wd'* for customer message analysis and experience improvement, or ask me anything about your business."
     
     # Default helpful response
-    help_options = "Reply *'ideas'* for social media marketing ideas, *'sales'* for emergency sales solutions, *'qstn'* for business advice, *'4wd'* for customer message analysis, *'status'* for subscription info, *'profile'* to manage your business info, or *'help'* for more options."
+    help_options = "Reply *'ideas'* for social media marketing ideas, *'sales'* for emergency sales solutions, *'qstn'* for business advice, *'4wd'* for customer message analysis and experience improvement, *'status'* for subscription info, *'profile'* to manage your business info, or *'help'* for more options."
     return f"I'm here to help your*{business_context}* business with *social media marketing* and *business analysis*! {help_options}"
 
 def check_subscription(profile_id):
@@ -5305,7 +5306,7 @@ What's your sales emergency? Examples:
 • "Debts due soon - need sales now"
 • "Stock expiring - quick clearance needed"
 
-Describe your URGENT sales problem:""")
+Describe your *URGENT* sales problem:""")
         return str(resp) 
 
         # Clear any existing continue_data when starting new QSTN
@@ -5322,7 +5323,7 @@ Examples:
 • "What's the best way to handle customer complaints?"
 • "How can I attract more customers to my store?"
 
-Ask me anything about your business operations, marketing, or customer service:""")
+*Ask me anything about your business operations, marketing, or customer service:*""")
         return str(resp)
     
         # ✅ Handle sales emergency response in WhatsApp
@@ -5385,7 +5386,7 @@ Ask me anything about your business operations, marketing, or customer service:"
         # Set session state for 4WD message
         session['awaiting_4wd'] = True
         
-        resp.message("""*📞 CUSTOMER MESSAGE ANALYSIS*
+        resp.message("""*📞 CUSTOMER MESSAGE ANALYSIS AND EXPERIENCE IMPROVEMENT*
 
 Forward or paste a customer message you'd like me to analyze. I'll provide:
 
@@ -5645,7 +5646,7 @@ Paste or forward the customer message now:""")
                            
             
     elif 'hello' in incoming_msg or 'hi' in incoming_msg or 'start' in incoming_msg:
-        resp.message("Hello! Welcome back! Reply *'ideas'* for social media marketing ideas, *'strat'* for marketing strategies, *'qstn'* for business advices, *'4wd'* for customer message analysis, *'status'* to check your subscription, or *'profile'* to manage your business info.")
+        resp.message("Hello! Welcome back! Reply *'ideas'* for social media marketing ideas, *'strat'* for marketing strategies, *'qstn'* for business advices, *'4wd'* for customer message analysis and experience improvement, *'status'* to check your subscription, or *'profile'* to manage your business info.")
         return str(resp)
     
     elif 'status' in incoming_msg:
@@ -5722,13 +5723,13 @@ Paste or forward the customer message now:""")
     # Initialize M-Pesa subscription flow for WhatsApp
     session = initialize_mpesa_subscription_flow(phone_number, 'whatsapp')
     
-    plan_selection_message = """💳 *SUBSCRIBE TO JENGABI*
+    plan_selection_message = """💳 *SUBSCRIBE TO JengaBI*
 
 Choose your plan:
 
 1. 🎯 *BASIC* - KSh 130/month or KSh 50/week
    • 5 social media ideas per week
-   • Business Q&A + Customer message analysis
+   • Business Q&A + Customer message analysis and experience improvement
 
 2. 🚀 *GROWTH* - KSh 249/month or KSh 80/week  
    • 15 ideas + Marketing strategies
@@ -5801,7 +5802,7 @@ You can now use all features. Reply 'ideas' to get started!""")
                 help_message += """
 • *'ideas'* - 5 social media ideas per week
 • *'qstn'* - Business advices & questions
-• *'4wd'* - Customer message analysis
+• *'4wd'* - Customer message analysis and experience improvement
 • *'status'* - Check your usage
 • *'profile'* - Manage business profile
 • *'subscribe'* - Upgrade your plan"""
@@ -5812,7 +5813,7 @@ You can now use all features. Reply 'ideas' to get started!""")
 • *'ideas'* - 15 social media ideas per week  
 • *'strat'* - Marketing strategies
 • *'qstn'* - Business advices & questions
-• *'4wd'* - Customer message analysis
+• *'4wd'* - Customer message analysis and experience improvement
 • *'status'* - Check your usage
 • *'profile'* - Manage business profile
 • *'subscribe'* - Upgrade your plan"""
@@ -5823,7 +5824,7 @@ You can now use all features. Reply 'ideas' to get started!""")
 • *'ideas'* - Unlimited social media ideas
 • *'strat'* - Advanced marketing strategies
 • *'qstn'* - Business advices & questions
-• *'4wd'* - Customer message analysis
+• *'4wd'* - Customer message analysis and experience improvement
 • *'trends'* - Real-time market trends
 • *'competitor'* - Competitor intelligence
 • *'status'* - Check your usage
@@ -5835,7 +5836,7 @@ You can now use all features. Reply 'ideas' to get started!""")
 • *'ideas'* - Social media marketing ideas
 • *'strat'* - Marketing strategies
 • *'qstn'* - Business advices & questions
-• *'4wd'* - Customer message analysis
+• *'4wd'* - Customer message analysis and experience improvement
 • *'status'* - Check subscription
 • *'profile'* - Manage business profile"""
         
@@ -5850,7 +5851,7 @@ You can now use all features. Reply 'ideas' to get started!""")
 *Available in all plans:*
 • Social media marketing ideas
 • Business Q&A (*'qstn'*)
-• Customer message analysis (*'4wd'*)
+• Customer message analysis and experience improvement (*'4wd'*)
 
 Reply *'subscribe'* to unlock all features!"""
 
@@ -5873,7 +5874,7 @@ Reply *'subscribe'* to unlock all features!"""
 • *'ideas'* - Generate social media marketing ideas
 • *'strat'* - Generate marketing strategies  
 • *'qstn'* - Business advices & questions
-• *'4wd'* - Customer message analysis
+• *'4wd'* - Customer message analysis and experience improvement
 • *'status'* - Check subscription  
 • *'subscribe'* - Choose a plan
 • *'profile'* - Manage your business profile
