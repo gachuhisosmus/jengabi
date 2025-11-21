@@ -3257,7 +3257,7 @@ Reply *'PAY'* to initiate M-Pesa payment or *'CANCEL'* to abort."""
     if user_profile.get('business_name'):
         business_context = f" {user_profile['business_name']}"
     
-    return f"I'm here to help your*{business_context}* business with *marketing* and *Business Analysis*! Use /ideas for content, /strat for strategies, /qstn for advice, /4wd for customer analysis, or /help for more options."
+    return f"I'm here to help your*{business_context}* business with *marketing* and *Business Analysis*! Use /ideas for content, /sales to get quick sales solutions, /strat for strategies, /qstn for advice, /4wd for customer analysis, or /help for more options."
 
 @app.route('/debug-telegram', methods=['GET'])
 def debug_telegram():
