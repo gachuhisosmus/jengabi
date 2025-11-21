@@ -3183,10 +3183,14 @@ Reply with *1*, *2*, or *3*:"""
 
        Reply with *1-6*:"""
            
-        elif incoming_msg == '2' and current_plan == 'basic':  # Selected Pro from Basic
-            selected_plan = 'pro'
-            session['mpesa_subscription_flow']['selected_plan'] = selected_plan
-            session['mpesa_subscription_flow']['step'] = 'duration_selection'  # Use existing duration flow
+        elif incoming_msg == '2':  # Selected Pro from Basic
+            # Get current plan from session flow data
+            current_plan = mpesa_flow.get('current_plan', 'basic')
+    
+            if current_plan == 'basic':
+                selected_plan = 'pro'
+                session['mpesa_subscription_flow']['selected_plan'] = selected_plan
+                session['mpesa_subscription_flow']['step'] = 'duration_selection'
 
             plan_info = ENHANCED_PLANS[selected_plan]
             return f"""✅ Selected *UPGRADE to PRO Plan*
@@ -3204,14 +3208,13 @@ Reply with *1*, *2*, or *3*:"""
 
         Reply with *1-6*:"""  
              
-        elif incoming_msg == '2' and current_plan == 'growth':  # Cancelled from Growth
+        else:  # growth → cancelled
             clear_mpesa_subscription_flow(session)
             return "Upgrade cancelled. Keeping your Growth plan. Use /status to check your subscription."
     
-        else:
-            return "Please choose a valid option."
-     
-        
+    else:
+        return "Please choose a valid option (1 or 2)."
+          
         # 🚨 FIX: Handle cancellation within M-Pesa flow for all steps
         if clean_msg in ['cancel', 'exit']:
             print(f"🔄 CANCELLING MPESA FLOW: {clean_msg}")
