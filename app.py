@@ -2565,6 +2565,7 @@ def process_telegram_message(chat_id, incoming_msg):
 # ===== NEW EMERGENCY SALES COMMAND =====
 
 def handle_sales_command(phone_number, user_profile):
+    print(f"🚨 SALES COMMAND: Starting for {user_profile.get('business_name')}")
     """Handle emergency sales solutions"""
     if not check_subscription(user_profile['id']):
         return "🔒 Emergency sales solutions require a subscription. Use /subscribe to unlock!"
@@ -2587,12 +2588,16 @@ What's your sales emergency? Examples:
 Describe your URGENT sales problem:"""
 
 def generate_emergency_sales_solution(phone_number, user_profile, emergency_desc):
-    """Generate immediate, actionable sales solutions"""
+    """Generate immediate, actionable sales solutions USING BUSINESS PRODUCTS"""
     try:
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
         safe_profile, safe_emergency = anonymize_for_command('sales', user_profile, emergency_desc)
+        
+        # GET BUSINESS PRODUCTS FOR TARGETED SOLUTIONS
+        business_products = user_profile.get('business_products', [])
+        products_text = ', '.join(business_products) if business_products else "general products"
         
         prompt = f"""
         ACT as an EMERGENCY BUSINESS RESCUE SPECIALIST for African SMEs.
@@ -2601,44 +2606,45 @@ def generate_emergency_sales_solution(phone_number, user_profile, emergency_desc
         - Business: {safe_profile.get('business_name', 'Small Business')}
         - Industry: {safe_profile.get('business_type', 'Business')} 
         - Location: {safe_profile.get('business_location', 'Kenya')}
-        - Products: {', '.join(safe_profile.get('business_products', []))}
+        - SPECIFIC PRODUCTS: {products_text}
         
         EMERGENCY: "{safe_emergency}"
         
-        Provide CRITICAL EMERGENCY RESPONSE with:
+        Provide CRITICAL EMERGENCY RESPONSE SPECIFIC TO THEIR PRODUCTS:
         
-        🚨 IMMEDIATE CASH ACTIONS (Today/Tomorrow):
-        • 3-4 SPECIFIC actions to generate cash within 48 hours
-        • Exact pricing strategies for quick sales
-        • Emergency customer outreach templates
-        • Urgent promotion ideas that WORK NOW
+        🚨 PRODUCT-SPECIFIC CASH ACTIONS (Today/Tomorrow):
+        • Create emergency bundles using: {products_text}
+        • Specific discount structures for their actual products
+        • Cross-selling strategies between their products
+        • Urgent promotion ideas for THEIR specific inventory
         
-        💰 QUICK INVENTORY MOVEMENT:
-        • Emergency discount structures
-        • Bundle strategies for stuck stock
-        • Flash sale execution plan
-        • Customer urgency creation tactics
+        💰 INVENTORY MOVEMENT FOR THEIR PRODUCTS:
+        • Which products to discount first based on their inventory
+        • Bundle pricing for: {products_text}
+        • Flash sale execution for their specific items
+        • Customer urgency creation tactics for their business type
         
-        📱 EXECUTION TEMPLATES:
-        • Ready-to-send WhatsApp broadcast messages
-        • Social media emergency posts
-        • Customer phone call scripts
-        • Door-to-door sales pitches (if applicable)
+        📱 EXECUTION TEMPLATES USING THEIR PRODUCTS:
+        • Ready-to-send WhatsApp broadcast messages mentioning {products_text}
+        • Social media emergency posts about their specific products
+        • Customer phone call scripts referencing their actual items
+        • Product-specific upsell strategies
         
-        🎯 AFRICAN MARKET SPECIFICS:
-        • Mobile money payment urgency tactics
-        • Local community leverage strategies
-        • Cultural urgency triggers
-        • Price points that convert IMMEDIATELY
+        🎯 AFRICAN MARKET SPECIFICS FOR THEIR INDUSTRY:
+        • Mobile money payment urgency tactics for {safe_profile.get('business_type', 'business')}
+        • Local community leverage strategies in {safe_profile.get('business_location', 'area')}
+        • Cultural urgency triggers for their customer base
+        • Price points that convert IMMEDIATELY for {products_text}
         
         Focus on ACTIONABLE, CONCRETE steps with EXACT numbers and READY-TO-USE templates.
-        No theory - only what works NOW in African markets.
+        Reference their ACTUAL products: {products_text}
+        No theory - only what works NOW in African markets for THEIR specific business.
         """
         
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
-                {"role": "system", "content": "You are an emergency business rescue expert for African SMEs. Provide immediate, actionable cash generation strategies with specific numbers, ready-to-use templates, and urgent execution steps. Focus on solving cashflow and inventory emergencies TODAY."},
+                {"role": "system", "content": f"You are an emergency business rescue expert for African SMEs. Provide immediate, actionable cash generation strategies SPECIFIC to {products_text}. Use their actual products in all recommendations with specific numbers, ready-to-use templates, and urgent execution steps."},
                 {"role": "user", "content": prompt}
             ],
             max_tokens=1000,
@@ -2647,20 +2653,21 @@ def generate_emergency_sales_solution(phone_number, user_profile, emergency_desc
         
         solution = response.choices[0].message.content.strip()
         
-        # Add immediate action emphasis
-        enhanced_response = f"""🚨 *EMERGENCY SALES RESCUE PLAN*
+        # Add immediate action emphasis with product context
+        enhanced_response = f"""🚨 *EMERGENCY SALES RESCUE PLAN FOR {user_profile.get('business_name', 'Your Business').upper()}*
 
 *Your Emergency:* {emergency_desc}
+*Your Products:* {products_text}
 
 {solution}
 
 ⚡ *IMMEDIATE NEXT STEPS:*
-1. Pick ONE action and start NOW
-2. Use the ready templates immediately  
+1. Pick ONE action using your products and start NOW
+2. Use the ready templates immediately with YOUR product names
 3. Report back in 24 hours for follow-up
 4. Need more urgent help? Reply 'HELP'
 
-💡 *Pro Tip:* Execute ONE thing perfectly rather than trying everything!"""
+💡 *Pro Tip:* Focus on moving {business_products[0] if business_products else 'your key products'} first for quick cash!"""
 
         return enhanced_response
         
@@ -2798,6 +2805,7 @@ Use /subscribe to unlock emergency business rescue!"""
 Use /subscribe to unlock all features!"""
 
 def handle_telegram_commands(phone_number, user_profile, command):
+    print(f"🔍 TELEGRAM COMMAND DEBUG: Processing '{command}'")
     """Handle Telegram commands specifically"""
     session = ensure_user_session(phone_number)
     
@@ -2851,6 +2859,7 @@ Ready to grow your business? 🚀"""
         return get_telegram_help(user_profile)
     
     elif command == 'sales':
+        print("🚨 TELEGRAM SALES COMMAND: Handling sales command")
         return handle_sales_command(phone_number, user_profile)
     
     else:
@@ -5276,12 +5285,15 @@ I see you're new here! Let me help you set up your business profile so I can cre
         
         # ✅ Handle SALES command in WhatsApp (EMERGENCY SALES SOLUTIONS)
     if incoming_msg.strip() == 'sales':
+        print(f"🚨 SALES COMMAND DETECTED in WhatsApp")
         if not check_subscription(user_profile['id']):
             resp.message("🔒 Emergency sales solutions require a subscription. Reply 'subscribe' to unlock!")
             return str(resp)
         
         session['awaiting_sales_emergency'] = True
+        print(f"🚨 SET awaiting_sales_emergency to True")
         resp.message("""🚨 *EMERGENCY SALES RESCUE*
+        return str(resp)
 
 I'll give you IMMEDIATE solutions for urgent business problems!
 
