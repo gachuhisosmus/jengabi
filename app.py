@@ -2612,25 +2612,25 @@ def generate_emergency_sales_solution(phone_number, user_profile, emergency_desc
         
         Provide CRITICAL EMERGENCY RESPONSE SPECIFIC TO THEIR PRODUCTS:
         
-        🚨 PRODUCT-SPECIFIC CASH ACTIONS (Today/Tomorrow):
+        🚨 *PRODUCT-SPECIFIC CASH ACTIONS (Today/Tomorrow):*
         • Create emergency bundles using: {products_text}
         • Specific discount structures for their actual products
         • Cross-selling strategies between their products
         • Urgent promotion ideas for THEIR specific inventory
         
-        💰 INVENTORY MOVEMENT FOR THEIR PRODUCTS:
+        💰 *INVENTORY MOVEMENT FOR THEIR PRODUCTS:*
         • Which products to discount first based on their inventory
         • Bundle pricing for: {products_text}
         • Flash sale execution for their specific items
         • Customer urgency creation tactics for their business type
         
-        📱 EXECUTION TEMPLATES USING THEIR PRODUCTS:
+        📱 *EXECUTION TEMPLATES USING THEIR PRODUCTS:*
         • Ready-to-send WhatsApp broadcast messages mentioning {products_text}
         • Social media emergency posts about their specific products
         • Customer phone call scripts referencing their actual items
         • Product-specific upsell strategies
         
-        🎯 AFRICAN MARKET SPECIFICS FOR THEIR INDUSTRY:
+        🎯 *AFRICAN MARKET SPECIFICS FOR THEIR INDUSTRY:*
         • Mobile money payment urgency tactics for {safe_profile.get('business_type', 'business')}
         • Local community leverage strategies in {safe_profile.get('business_location', 'area')}
         • Cultural urgency triggers for their customer base
@@ -2682,7 +2682,30 @@ def get_telegram_status(user_profile):
         
         if has_subscription:
             # 🚨 CRITICAL FIX: Get FRESH data from database, not cached user_profile
-            fresh_response = supabase.table('profiles').select('*').eq('id', user_profile['id']).execute()
+        
+            # Get fresh subscription data
+            sub_response = supabase.table('subscriptions').select('*').eq('profile_id', user_profile['id']).eq('is_active', True).execute()
+    
+            if sub_response.data:
+                subscription = sub_response.data[0]
+                end_date = subscription.get('end_date', 'Unknown')
+                days_remaining = "Unknown"
+        
+                # Calculate days remaining
+                if end_date and end_date != 'Unknown':
+                    try:
+                       from datetime import datetime
+                       end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                       days_remaining = (end_dt - datetime.now()).days
+                       if days_remaining < 0:
+                          days_remaining = "EXPIRED"
+                    except:
+                          days_remaining = "Unknown"
+        
+        # ... existing status message code ...
+        
+        
+                fresh_response = supabase.table('profiles').select('*').eq('id', user_profile['id']).execute()
             if fresh_response.data:
                 fresh_data = fresh_response.data[0]
                 
@@ -2700,6 +2723,8 @@ def get_telegram_status(user_profile):
                 # Get plan details from ENHANCED_PLANS
                 plan_details = ENHANCED_PLANS.get(plan_type, ENHANCED_PLANS['basic'])
                 
+                status_message += f"\n\n*📅 SUBSCRIPTION ENDS:* {end_date[:10] if len(end_date) > 10 else end_date}"
+                status_message += f"\n*⏳ DAYS REMAINING:* {days_remaining}"
                 status_message = f"""*📊 YOUR SUBSCRIPTION STATUS*
 
 *Plan:* {plan_type.upper()} Package
@@ -3293,6 +3318,37 @@ def test_webhook():
         "timestamp": datetime.now().isoformat()
     })
 
+@app.route('/test-subscription-expiry', methods=['GET'])
+def test_subscription_expiry():
+    """Test subscription expiration system"""
+    try:
+        # Test with known users
+        test_users = ['telegram:1657226784', 'whatsapp:+254726979194']
+        
+        results = {}
+        for phone in test_users:
+            profile = get_or_create_profile(phone)
+            if profile:
+                # Test current subscription status
+                is_active = check_subscription(profile['id'])
+                
+                results[phone] = {
+                    'business': profile.get('business_name'),
+                    'subscription_active': is_active,
+                    'profile_id': profile['id']
+                }
+        
+        # Run cleanup
+        cleanup_expired_subscriptions()
+        
+        return jsonify({
+            'subscription_expiry_test': results,
+            'message': 'Run /status command to see expiration dates'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # Initialize Google Trends
 pytrends = TrendReq(hl='en-US', tz=360)
 
@@ -3701,6 +3757,10 @@ def schedule_session_cleanup():
 # Start session cleanup scheduling
 cleanup_thread = threading.Thread(target=schedule_session_cleanup, daemon=True)
 cleanup_thread.start()
+
+# Schedule subscription cleanup daily at 2 AM
+schedule.every().day.at("02:00").do(cleanup_expired_subscriptions)
+print("✅ Scheduled subscription expiration cleanup daily at 2 AM")
 
 # Schedule weekly updates
 def schedule_weekly_updates():
@@ -4570,30 +4630,111 @@ def get_intelligent_response(incoming_msg, user_profile):
     return f"I'm here to help your*{business_context}* business with *social media marketing* and *business analysis*! {help_options}"
 
 def check_subscription(profile_id):
-    """Checks if the user has an active subscription."""
+    """Checks if the user has an active AND non-expired subscription."""
     try:
+        from datetime import datetime
+        
+        # Get active subscriptions
         response = supabase.table('subscriptions').select('*').eq('profile_id', profile_id).eq('is_active', True).execute()
-        has_subscription = len(response.data) > 0
-        return has_subscription
+        
+        if not response.data:
+            return False
+            
+        subscription = response.data[0]
+        
+        # Check if subscription has expired
+        end_date_str = subscription.get('end_date')
+        if end_date_str:
+            try:
+                end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
+                if datetime.now() > end_date:
+                    # Subscription expired - auto deactivate
+                    print(f"🔄 SUBSCRIPTION EXPIRED: Auto-deactivating {profile_id}")
+                    supabase.table('subscriptions').update({
+                        'is_active': False,
+                        'payment_status': 'expired'
+                    }).eq('profile_id', profile_id).execute()
+                    return False
+            except Exception as e:
+                print(f"Error parsing end_date: {e}")
+        
+        return True
+        
     except Exception as e:
         print(f"Error checking subscription: {e}")
         return False
 
 def get_user_plan_info(profile_id):
-    """Gets the user's plan type and output_type."""
+    """Gets the user's plan type and output_type - with expiration check."""
     try:
-        response = supabase.table('subscriptions').select('plan_type').eq('profile_id', profile_id).eq('is_active', True).execute()
+        from datetime import datetime
+        
+        response = supabase.table('subscriptions').select('*').eq('profile_id', profile_id).eq('is_active', True).execute()
+        
         if response.data:
+            subscription = response.data[0]
+            
+            # Check expiration
+            end_date_str = subscription.get('end_date')
+            if end_date_str:
+                try:
+                    end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
+                    if datetime.now() > end_date:
+                        # Return None for expired subscriptions
+                        return None
+                except Exception as e:
+                    print(f"Error parsing end_date in plan info: {e}")
+            
             plan_data = response.data[0]
             # Add output_type based on plan_type
             plan_type = plan_data.get('plan_type')
             if plan_type in ENHANCED_PLANS:
                 plan_data['output_type'] = ENHANCED_PLANS[plan_type]['output_type']
             return plan_data
+        
         return None
     except Exception as e:
         print(f"Error getting plan info: {e}")
         return None
+    
+def cleanup_expired_subscriptions():
+    """Clean up all expired subscriptions - run periodically"""
+    try:
+        from datetime import datetime
+        
+        # Find all active subscriptions that have expired
+        response = supabase.table('subscriptions').select('*').eq('is_active', True).execute()
+        
+        expired_count = 0
+        for subscription in response.data:
+            end_date_str = subscription.get('end_date')
+            if end_date_str:
+                try:
+                    end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
+                    if datetime.now() > end_date:
+                        # Deactivate expired subscription
+                        supabase.table('subscriptions').update({
+                            'is_active': False,
+                            'payment_status': 'expired'
+                        }).eq('id', subscription['id']).execute()
+                        
+                        # Reset user message limits to free tier
+                        supabase.table('profiles').update({
+                            'max_messages': 20,
+                            'used_messages': 0
+                        }).eq('id', subscription['profile_id']).execute()
+                        
+                        expired_count += 1
+                        print(f"🔄 CLEANUP: Deactivated expired subscription for {subscription['profile_id']}")
+                        
+                except Exception as e:
+                    print(f"Error in cleanup for subscription {subscription['id']}: {e}")
+        
+        if expired_count > 0:
+            print(f"✅ CLEANUP: Deactivated {expired_count} expired subscriptions")
+            
+    except Exception as e:
+        print(f"Error in subscription cleanup: {e}")    
 
 def handle_user_without_products(phone_number, user_profile, incoming_msg):
     """Handle existing users who don't have products saved"""
