@@ -2629,12 +2629,18 @@ def process_telegram_message(chat_id, incoming_msg):
     
     # ✅ Handle regular commands without "/"
     clean_msg = incoming_msg.lower().strip()
-    if clean_msg in ['ideas', 'strat', 'qstn', '4wd', 'profile', 'status', 'subscribe', 'help', 'trends', 'competitor']:
+    if clean_msg in ['ideas', 'strat', 'qstn', '4wd', 'profile', 'status', 'subscribe', 'help', 'trends', 'competitor', 'sales']:
         print(f"🔍 TELEGRAM COMMAND: Processing {clean_msg} without slash")
         return handle_telegram_commands(phone_number, user_profile, clean_msg)
     
     # ✅ Handle session states for regular messages
-    return handle_telegram_session_states(phone_number, user_profile, incoming_msg)
+    response = handle_telegram_session_states(phone_number, user_profile, incoming_msg)
+    
+    # ✅ CRITICAL: Ensure we always return a valid response
+    if not response or len(response.strip()) == 0:
+        return "I'm here to help your business! Try '/profile' to manage your business info, '/ideas' for marketing content, '/sales' to get quick sales solutions, or '/help' for all options."
+    
+    return response
 
 # ===== NEW EMERGENCY SALES COMMAND =====
 
@@ -3103,8 +3109,8 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
                 'continue_data': None
             })
             return "Returning to main menu. Use /help to see available commands."
-        
-            # 🆕 CRITICAL FIX: Handle sales emergency response
+    
+    # 🆕 CRITICAL FIX: Handle sales emergency response
     if session.get('awaiting_sales_emergency'):
         print(f"🚨 SALES EMERGENCY: Processing emergency description: '{incoming_msg}'")
         session['awaiting_sales_emergency'] = False
@@ -3120,7 +3126,71 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
         
         return emergency_response
     
-        # 🚨 ADD VALIDATION: If we have output_type but no active command, RESET
+    # 🚨 CRITICAL FIX: Handle QSTN question input
+    if session.get('awaiting_qstn'):
+        print(f"🚨 QSTN FOLLOW-UP: Processing question: '{incoming_msg}'")
+        
+        # CRITICAL: Clear state immediately
+        session['awaiting_qstn'] = False
+        update_message_usage(user_profile['id']) 
+        
+        question = incoming_msg.strip()
+        
+        if not question or len(question) < 5:
+            return "Please ask a specific business question (at least 5 characters). Reply 'qstn' to try again."
+        
+        print("🚨 QSTN: Generating business advice...")
+        
+        try:
+            # Generate business advice
+            qstn_response = handle_qstn_command(phone_number, user_profile, question)
+            print(f"🚨 QSTN: Response generated, length: {len(qstn_response)}")
+            
+            # Check if response is long enough to need continuation
+            if len(qstn_response) > 1000:
+                # Use continue system for long responses
+                first_part = setup_continue_session(session, 'qstn', qstn_response, {'question': question})
+                print(f"🚨 QSTN: Using continue system, first part length: {len(first_part)}")
+                return first_part
+            else:
+                # Send directly for short responses
+                print(f"🚨 QSTN: Direct response sent, length: {len(qstn_response)}")
+                return qstn_response
+            
+        except Exception as e:
+            print(f"❌ QSTN ERROR: {e}")
+            return "Sorry, I encountered an error while processing your question. Please try again."
+    
+    # 🚨 CRITICAL FIX: Handle 4WD message input
+    if session.get('awaiting_4wd'):
+        print(f"🚨 4WD FOLLOW-UP: Processing customer message: '{incoming_msg}'")
+        
+        # ALWAYS clear the 4WD state first
+        session['awaiting_4wd'] = False 
+        
+        customer_message = incoming_msg.strip()
+        
+        if not customer_message or len(customer_message) < 5:
+            print("🚨 4WD ERROR: Message too short")
+            return "Please provide a customer message to analyze (at least 5 characters). Reply '4wd' to try again."
+        
+        print("🚨 4WD: Analyzing customer message...")
+        # Generate customer message analysis
+        analysis_response = handle_4wd_command(phone_number, user_profile, customer_message)
+        print(f"🚨 4WD: Analysis generated, length: {len(analysis_response)}")
+        
+        # Check if response is long enough to need continuation
+        if len(analysis_response) > 1000:
+            # Use continue system for long responses
+            first_part = setup_continue_session(session, '4wd', analysis_response, {'customer_message': customer_message})
+            print(f"🚨 4WD: Using continue system, first part length: {len(first_part)}")
+            return first_part
+        else:
+            # Send directly for short responses
+            print(f"🚨 4WD: Direct response sent, length: {len(analysis_response)}")
+            return analysis_response
+    
+    # 🚨 ADD VALIDATION: If we have output_type but no active command, RESET
     if (session.get('output_type') and 
         not any(session.get(state) for state in [
             'awaiting_qstn', 'awaiting_4wd', 'awaiting_product_selection', 
@@ -3129,7 +3199,7 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
         print(f"🔄 AUTO-RESET: output_type without active command - {session.get('output_type')}")
         session['output_type'] = None
 
-        # 🚨 CRITICAL FIX: Handle product selection
+    # 🚨 CRITICAL FIX: Handle product selection
     if session.get('awaiting_product_selection'):
         print(f"🔄 PRODUCT SELECTION: Processing '{incoming_msg}'")
         selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
@@ -3163,12 +3233,13 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
         else:
             session['awaiting_product_selection'] = False
             return "I didn't understand your product selection. Please reply 'ideas' or 'strat' to try again."
-    
+       
     # 🚨 PRIORITY 2: Handle M-Pesa subscription flow with subscription check
     mpesa_flow = session.get('mpesa_subscription_flow')
     if mpesa_flow:
         current_step = mpesa_flow.get('step', 'plan_selection')
         print(f"🔍 MPESA FLOW: Current step = {current_step}")
+        pass
 
         # Check if user already has active subscription
         has_active_sub = check_subscription(user_profile['id'])
