@@ -758,6 +758,42 @@ def ensure_user_session(phone_number):
     
     return session
 
+def reset_session_states(session, keep_mpesa_flow=False):
+    """Completely reset all session states to prevent pollution"""
+    print(f"🔄 RESETTING SESSION STATES for {session}")
+    
+    # Preserve M-Pesa flow if needed
+    mpesa_flow = session.get('mpesa_subscription_flow') if keep_mpesa_flow else None
+    
+    # Clear ALL session states
+    session.clear()
+    
+    # Restore M-Pesa flow if requested
+    if mpesa_flow:
+        session['mpesa_subscription_flow'] = mpesa_flow
+    
+    # Initialize with clean default states
+    session.update({
+        'onboarding': False,
+        'awaiting_product_selection': False,
+        'awaiting_custom_product': False,
+        'adding_products': False,
+        'managing_profile': False,
+        'awaiting_qstn': False,
+        'awaiting_4wd': False,
+        'awaiting_sales_emergency': False,
+        'generating_strategy': False,
+        'continue_data': None,
+        'profile_step': None,
+        'updating_field': None,
+        'editing_index': None,
+        'output_type': None,
+        'onboarding_step': 0,
+        'business_data': {}
+    })
+    
+    print(f"✅ SESSION RESET COMPLETE: {session}")
+
 # ===== SECURITY FUNCTIONS =====
 import re
 import html
@@ -2856,22 +2892,11 @@ Use /subscribe to unlock all features!"""
 
 def handle_telegram_commands(phone_number, user_profile, command):
     print(f"🔍 TELEGRAM COMMAND DEBUG: Processing '{command}'")
-    """Handle Telegram commands specifically"""
+    
     session = ensure_user_session(phone_number)
 
-    # 🚨 CLEAR SUBSCRIPTION FLOW FOR ALL COMMANDS EXCEPT 'subscribe'
-    if command != 'subscribe' and session.get('mpesa_subscription_flow'):
-        print(f"🔄 CLEARING MPESA FLOW for command: {command}")
-        clear_mpesa_subscription_flow(session)
-    
-    # Clear any existing states when starting new commands
-    session.update({
-        'awaiting_qstn': False,
-        'awaiting_4wd': False,
-        'awaiting_product_selection': False,
-        'awaiting_sales_emergency': False,
-        'continue_data': None
-    })
+    # 🚨 COMPREHENSIVE RESET: Clear ALL states for new commands
+    reset_session_states(session, keep_mpesa_flow=(command == 'subscribe'))
     
     if command == 'start':
         return """👋 *Welcome to JengaBI on Telegram!*
@@ -2922,7 +2947,7 @@ Ready to grow your business? 🚀"""
         return "Unknown command. Use /help to see available commands."
 
 def handle_telegram_ideas_command(phone_number, user_profile):
-    """Handle Telegram ideas command"""
+    """Handle Telegram ideas command with CLEAN state management"""
     session = ensure_user_session(phone_number)
     
     if not check_subscription(user_profile['id']):
@@ -2932,14 +2957,10 @@ def handle_telegram_ideas_command(phone_number, user_profile):
     if remaining <= 0:
         return "You've used all your available AI content generations for this period. Use /status to check your usage."
     
-    # Determine output type based on plan
-    plan_info = get_user_plan_info(user_profile['id']) if check_subscription(user_profile['id']) else None
-    if plan_info and plan_info.get('plan_type') == 'pro':
-        session['output_type'] = 'pro_ideas'
-    else:
-        session['output_type'] = 'ideas'
-    
+    # 🚨 CLEAN STATE: Only set what's needed
     session['awaiting_product_selection'] = True
+    session['output_type'] = 'ideas'
+    
     return start_product_selection(phone_number, user_profile)
 
 def handle_telegram_strat_command(phone_number, user_profile):
@@ -3098,6 +3119,15 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
         print(f"🚨 SALES EMERGENCY: Response generated, length: {len(emergency_response)}")
         
         return emergency_response
+    
+        # 🚨 ADD VALIDATION: If we have output_type but no active command, RESET
+    if (session.get('output_type') and 
+        not any(session.get(state) for state in [
+            'awaiting_qstn', 'awaiting_4wd', 'awaiting_product_selection', 
+            'onboarding', 'managing_profile', 'awaiting_sales_emergency'
+        ])):
+        print(f"🔄 AUTO-RESET: output_type without active command - {session.get('output_type')}")
+        session['output_type'] = None
     
     # 🚨 PRIORITY 2: Handle M-Pesa subscription flow with subscription check
     mpesa_flow = session.get('mpesa_subscription_flow')
@@ -3446,8 +3476,7 @@ Reply *'PAY'* to initiate M-Pesa payment or *'CANCEL'* to abort."""
             session['awaiting_product_selection'] = False
             output_type = session.get('output_type', 'ideas')
             
-            if 'output_type' in session:
-                del session['output_type']
+            session['output_type'] = None
             
             ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
             headers = {
@@ -5881,8 +5910,7 @@ Paste or forward the customer message now:""")
             output_type = session.get('output_type', 'ideas')
             
             # Clear the output_type after use
-            if 'output_type' in session:
-                del session['output_type']
+            session['output_type'] = None
             
             ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
             print(f"🚨 IDEAS GENERATED: {len(ideas)} characters")
