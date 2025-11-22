@@ -3128,6 +3128,41 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
         ])):
         print(f"🔄 AUTO-RESET: output_type without active command - {session.get('output_type')}")
         session['output_type'] = None
+
+        # 🚨 CRITICAL FIX: Handle product selection
+    if session.get('awaiting_product_selection'):
+        print(f"🔄 PRODUCT SELECTION: Processing '{incoming_msg}'")
+        selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
+        
+        print(f"🔄 PRODUCT SELECTION RESULT: products={selected_products}, error={error_message}")
+       
+        if error_message:
+            return error_message
+        elif selected_products:
+            session['awaiting_product_selection'] = False
+            output_type = session.get('output_type', 'ideas')
+            
+            # 🚨 CRITICAL: Clear output_type immediately after use
+            session['output_type'] = None
+            
+            print(f"🔄 GENERATING IDEAS for {selected_products} with output_type: {output_type}")
+            ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
+            print(f"🔄 IDEAS GENERATED: {len(ideas)} characters")
+            
+            # Different headers for each type
+            headers = {
+                'ideas': "🎯 SOCIAL MEDIA CONTENT IDEAS",
+                'pro_ideas': "🚀 PREMIUM VIRAL CONTENT CONCEPTS", 
+                'strategies': "📊 COMPREHENSIVE MARKETING STRATEGY"
+            }
+            header = headers.get(output_type, "🎯 MARKETING CONTENT")
+            response_text = f"{header} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
+            
+            update_message_usage(user_profile['id'])
+            return response_text
+        else:
+            session['awaiting_product_selection'] = False
+            return "I didn't understand your product selection. Please reply 'ideas' or 'strat' to try again."
     
     # 🚨 PRIORITY 2: Handle M-Pesa subscription flow with subscription check
     mpesa_flow = session.get('mpesa_subscription_flow')
@@ -4227,6 +4262,7 @@ def start_product_selection(phone_number, user_profile):
 Reply with numbers separated by commas (*e.g., 1,3,5*)
 """
 
+# FIND this function:
 def handle_product_selection(incoming_msg, user_profile, phone_number):
     """Process product selection input"""
     try:
@@ -4263,6 +4299,57 @@ def handle_product_selection(incoming_msg, user_profile, phone_number):
         
     except Exception as e:
         print(f"Error handling product selection: {e}")
+        return None, "Please select products using numbers (e.g., 1,3,5)"
+
+# ADD BETTER DEBUGGING at the start:
+def handle_product_selection(incoming_msg, user_profile, phone_number):
+    """Process product selection input"""
+    print(f"🔄 HANDLE_PRODUCT_SELECTION: Processing '{incoming_msg}'")
+    try:
+        # Ensure session exists
+        session = ensure_user_session(phone_number)
+            
+        products = user_profile.get('business_products', [])
+        print(f"🔄 AVAILABLE PRODUCTS: {products}")
+        
+        if not products:
+            products = ["Main Product", "Service", "Special Offer", "New Arrival"]
+            print(f"🔄 USING DEFAULT PRODUCTS: {products}")
+        
+        selections = []
+        choices = [choice.strip() for choice in incoming_msg.split(',')]
+        print(f"🔄 USER CHOICES: {choices}")
+        
+        for choice in choices:
+            if choice.isdigit():
+                idx = int(choice) - 1
+                print(f"🔄 PROCESSING CHOICE: {choice} -> index {idx}")
+                
+                if 0 <= idx < len(products):
+                    selections.append(products[idx])
+                    print(f"🔄 ADDED PRODUCT: {products[idx]}")
+                elif idx == len(products):  # "All Products"
+                    selections = products.copy()
+                    print(f"🔄 SELECTED ALL PRODUCTS: {selections}")
+                    break
+                elif idx == len(products) + 1:  # "Other"
+                    session['awaiting_custom_product'] = True
+                    print(f"🔄 AWAITING CUSTOM PRODUCT")
+                    return None, "Please describe the product you want to promote:"
+            else:
+                # Handle non-numeric input gracefully
+                return None, "Please select products using numbers only (e.g., 1,3,5)"
+        
+        print(f"🔄 FINAL SELECTIONS: {selections}")
+        
+        # FIX: Ensure we always return valid selections or an error
+        if not selections:
+            return None, "Please select valid product numbers (e.g., 1,3,5)"
+            
+        return selections, None
+        
+    except Exception as e:
+        print(f"❌ Error handling product selection: {e}")
         return None, "Please select products using numbers (e.g., 1,3,5)"
 
 # ===== CONTINUE SYSTEM FUNCTIONS =====
