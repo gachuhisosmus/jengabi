@@ -3327,7 +3327,7 @@ Reply with *1*, *2*, or *3*:"""
         Reply *1* to upgrade or *2* to cancel:"""
             elif incoming_msg == '2':  # CANCEL
                clear_mpesa_subscription_flow(session)
-               return "Upgrade cancelled. Keeping your current plan. Use /status to check your subscription."
+               return "Upgrade cancelled. Keeping your current plan. Use /status to *view* your current subscription."
 
             elif incoming_msg == '3':  # VIEW CURRENT
                 clear_mpesa_subscription_flow(session)
@@ -3352,7 +3352,7 @@ Reply with *1*, *2*, or *3*:"""
                 plan_info = ENHANCED_PLANS[selected_plan]
                 return f"""✅ Selected *UPGRADE to {selected_plan.upper()} Plan*
 
-        *Now choose payment duration:*
+                *Now choose payment duration:*
 
         1. ⏳ *1 Week* - KSh {plan_info['weekly_price']}
         2. 📅 *1 Month* - KSh {plan_info['monthly_price']} 
@@ -3388,17 +3388,212 @@ Reply with *1*, *2*, or *3*:"""
 
         💡 *Upgrade Benefit:* You get full access to PRO features immediately!  
 
-        Reply with *1-6*:"""  
-                 
-            else:  # growth → cancelled
+        Reply with *1-6*:""" 
+
+    # 🚨 ADD THIS: Handle duration selection for upgrades
+    elif current_step == 'duration_selection':
+        duration_choices = {
+            '1': 'weekly',
+            '2': 'monthly', 
+            '3': 'quarterly',
+            '4': 'biannual',
+            '5': 'annual',
+            '6': 'custom'
+        }
+        
+        if incoming_msg in duration_choices:
+            selected_duration = duration_choices[incoming_msg]
+            session['mpesa_subscription_flow']['selected_duration'] = selected_duration
+            
+            if selected_duration == 'custom':
+                session['mpesa_subscription_flow']['step'] = 'custom_months'
+                return "🔢 *CUSTOM DURATION:*\n\nHow many months? (2-11 months)\n\n5% discount applied.\n\nEnter number of months:"
+            else:
+                # Calculate price and move to phone number collection
+                selected_plan = session['mpesa_subscription_flow']['selected_plan']
+                
+                # Calculate price for the selected duration
+                price_result, error = calculate_subscription_price(
+                    selected_plan, 
+                    selected_duration, 
+                    None  # No custom months for standard durations
+                )
+                
+                if error:
+                    return f"❌ Error calculating price: {error}"
+                
+                # Update session with calculated price
+                session['mpesa_subscription_flow'].update({
+                    'calculated_price': price_result['final_amount'],
+                    'duration_days': price_result['duration_days'],
+                    'original_amount': price_result['original_amount'],
+                    'discount_percent': price_result['discount_percent'],
+                    'step': 'phone_input'
+                })
+                
+                # Generate account reference
+                account_ref = generate_account_reference(selected_plan, selected_duration)
+                session['mpesa_subscription_flow']['mpesa_account_reference'] = account_ref
+                
+                return f"""✅ Selected *{selected_duration.title()}* duration
+
+💰 *Payment Summary:*
+• Plan: {selected_plan.upper()}
+• Duration: {selected_duration.title()}
+• Amount: KSh {price_result['final_amount']}
+• Discount: {price_result['discount_percent']}%
+
+📱 *PAYMENT PHONE NUMBER*
+
+Please provide your M-Pesa phone number:
+
+Format: *0712345678* or *254712345678*
+
+We'll send payment prompt to this number.
+
+Enter your M-Pesa phone number:"""
+        
+        else:
+            return "Please choose a valid duration (1-6):"
+
+    # 🚨 ADD THIS: Handle custom months input
+    elif current_step == 'custom_months':
+        try:
+            custom_months = int(incoming_msg.strip())
+            if 2 <= custom_months <= 11:
+                selected_plan = session['mpesa_subscription_flow']['selected_plan']
+                
+                # Calculate price with custom months
+                price_result, error = calculate_subscription_price(
+                    selected_plan, 
+                    'custom', 
+                    custom_months
+                )
+                
+                if error:
+                    return f"❌ Error calculating price: {error}"
+                
+                # Update session
+                session['mpesa_subscription_flow'].update({
+                    'custom_months': custom_months,
+                    'calculated_price': price_result['final_amount'],
+                    'duration_days': price_result['duration_days'],
+                    'original_amount': price_result['original_amount'],
+                    'discount_percent': price_result['discount_percent'],
+                    'step': 'phone_input'
+                })
+                
+                # Generate account reference
+                account_ref = generate_account_reference(selected_plan, 'custom', custom_months)
+                session['mpesa_subscription_flow']['mpesa_account_reference'] = account_ref
+                
+                return f"""✅ Selected *{custom_months} Months* (Custom)
+
+💰 *Payment Summary:*
+• Plan: {selected_plan.upper()}
+• Duration: {custom_months} Months
+• Amount: KSh {price_result['final_amount']}
+• Discount: {price_result['discount_percent']}%
+
+📱 *PAYMENT PHONE NUMBER*
+
+Please provide your M-Pesa phone number:
+
+Format: *0712345678* or *254712345678*
+
+We'll send payment prompt to this number.
+
+Enter your M-Pesa phone number:"""
+            else:
+                return "Please enter a number between 2 and 11 months."
+        except ValueError:
+            return "Please enter a valid number (2-11 months)."
+
+    # 🚨 ADD THIS: Handle phone number input
+    elif current_step == 'phone_input':
+        # Validate and set payment phone number
+        is_valid, formatted_phone, message = validate_kenyan_phone_number(incoming_msg.strip())
+        if is_valid:
+            session['mpesa_subscription_flow']['payment_phone_number'] = formatted_phone
+            session['mpesa_subscription_flow']['payment_number_provided'] = True
+            session['mpesa_subscription_flow']['step'] = 'payment_confirmation'
+            
+            selected_plan = session['mpesa_subscription_flow']['selected_plan']
+            selected_duration = session['mpesa_subscription_flow']['selected_duration']
+            amount = session['mpesa_subscription_flow']['calculated_price']
+            
+            return f"""✅ Payment number set: *{format_phone_for_display(formatted_phone)}*
+
+📋 *FINAL CONFIRMATION:*
+*Plan:* {selected_plan.upper()} - {selected_duration.title()}
+*Amount:* KSh {amount}
+*Phone:* {format_phone_for_display(formatted_phone)}
+
+Reply *'PAY'* to initiate M-Pesa payment or *'CANCEL'* to abort."""
+        else:
+            return f"❌ Invalid phone number: {message}\n\nPlease enter a valid M-Pesa number (e.g., 0712345678):"
+
+    # 🚨 ADD THIS: Handle payment confirmation
+    elif current_step == 'payment_confirmation':
+        if incoming_msg.strip().lower() == 'pay':
+            # Initiate M-Pesa payment
+            chat_phone = session['mpesa_subscription_flow']['current_chat_phone']
+            payment_phone = session['mpesa_subscription_flow']['payment_phone_number']
+            plan_type = session['mpesa_subscription_flow']['selected_plan']
+            amount = session['mpesa_subscription_flow']['calculated_price']
+            duration_type = session['mpesa_subscription_flow']['selected_duration']
+            
+            account_ref = session['mpesa_subscription_flow']['mpesa_account_reference']
+            
+            # Initiate M-Pesa payment
+            checkout_id, message = initiate_mpesa_payment(payment_phone, amount, plan_type, account_ref)
+            
+            if checkout_id:
+                session['mpesa_subscription_flow']['mpesa_checkout_id'] = checkout_id
+                session['mpesa_subscription_flow']['step'] = 'awaiting_payment'
+                session['mpesa_subscription_flow']['payment_status'] = 'processing'
+
+                # Store checkout session for callback handling
+                store_checkout_session(
+                    checkout_id, 
+                    session['mpesa_subscription_flow'],
+                    {
+                        'selected_plan': plan_type,
+                        'selected_duration': duration_type,
+                        'final_amount': amount,
+                        'mpesa_account_reference': account_ref
+                    }
+                )
+
+                return f"💳 M-Pesa STK Push sent to {format_phone_for_display(payment_phone)}!\n\nCheck your phone for M-Pesa prompt to complete payment of KSh {amount}.\n\nI'll notify you when payment is confirmed. ✅"
+            else:
+                return f"❌ Payment initiation failed: {message}\n\nPlease try again or contact support."
+        
+        elif incoming_msg.strip().lower() == 'cancel':
+            clear_mpesa_subscription_flow(session)
+            return "Upgrade cancelled. Returning to main menu."
+        else:
+            return "Please reply 'PAY' to continue or 'CANCEL' to abort."
+
+    # 🚨 ADD THIS: Handle awaiting payment status
+    elif current_step == 'awaiting_payment':
+        # Check if payment might have been completed
+        checkout_id = mpesa_flow.get('mpesa_checkout_id')
+        if checkout_id:
+            checkout_session = find_checkout_session(checkout_id)
+            if not checkout_session:
+                # Checkout session deleted = payment likely completed
+                print(f"🔄 Auto-clearing completed payment session: {checkout_id}")
                 clear_mpesa_subscription_flow(session)
-                return "Upgrade cancelled. Keeping your Growth plan. Use /status to check your subscription."
-    
+                return "🔄 Your payment session has been cleared. Please check your subscription status with 'status' command."
+        
+        return "⏳ Still waiting for your M-Pesa payment confirmation. Please complete the payment on your phone or reply 'cancel' to abort."
+
     # Default response for unrecognized messages
     business_context = ""
     if user_profile.get('business_name'):
-        business_context = f" {user_profile['business_name']}"
-    
+           business_context = f" {user_profile['business_name']}"
+
     return f"I'm here to help your*{business_context}* business with *marketing* and *Business Analysis*! Use /ideas for content, /sales to get quick sales solutions, /strat for strategies, /qstn for advice, /4wd for customer analysis, or /help for more options."
 
 @app.route('/debug-telegram', methods=['GET'])
