@@ -3391,8 +3391,8 @@ Reply with *1*, *2*, or *3*:"""
         Reply with *1-6*:""" 
 
     # 🚨 ADD THIS: Handle duration selection for upgrades
-    elif current_step == 'duration_selection':
-        duration_choices = {
+        elif current_step == 'duration_selection':
+            duration_choices = {
             '1': 'weekly',
             '2': 'monthly', 
             '3': 'quarterly',
