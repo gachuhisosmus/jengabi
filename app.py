@@ -2446,6 +2446,41 @@ def mpesa_callback():
             if checkout_session:
                 chat_phone = checkout_session['user_phone']
                 session_data = ensure_user_session(chat_phone)
+                
+                # ✅ ADD CANCELLATION NOTIFICATION
+                platform = checkout_session.get('platform', 'telegram')
+                
+                if result_code == 1032:
+                    # Payment cancelled by user
+                    cancellation_message = f"""❌ PAYMENT CANCELLED
+
+You cancelled the M-Pesa payment for your {checkout_session.get('selected_plan', '').upper()} plan subscription.
+
+💰 Amount: KSh {checkout_session.get('amount', 0)}
+📱 Phone: {format_phone_for_display(checkout_session.get('payment_phone_number', ''))}
+
+💡 You can restart the subscription process anytime by replying 'subscribe'.
+
+Need help? Contact support for assistance."""
+                else:
+                    # Other payment failures
+                    user_friendly_msg = get_mpesa_error_message(result_code)
+                    cancellation_message = f"""❌ PAYMENT FAILED
+
+{user_friendly_msg}
+
+💰 Amount: KSh {checkout_session.get('amount', 0)}
+📱 Phone: {format_phone_for_display(checkout_session.get('payment_phone_number', ''))}
+
+💡 Please check your M-Pesa balance and try again, or reply 'subscribe' to restart the process."""
+
+                # Send notification based on platform
+                if platform == 'telegram':
+                    send_telegram_message(chat_phone.replace('telegram:', ''), cancellation_message)
+                elif platform == 'whatsapp':
+                    # You'll need to implement WhatsApp sending logic here
+                    print(f"📱 WhatsApp payment failure notification for {chat_phone}: {cancellation_message}")
+                
                 clear_mpesa_subscription_flow(session_data)
                 
                 # Delete failed checkout session
