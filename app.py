@@ -2525,18 +2525,21 @@ def send_telegram_message(chat_id, text):
         print(f"❌ TELEGRAM EMPTY RESPONSE: Attempted to send empty message to {chat_id}")
         text = "I'm here to help your business! Try '/profile' to manage your business info, '/ideas' for marketing content, '/sales' to get quick sales solutions, or '/help' for all options."
     
-    # Ensure response has minimum length and content
-    if len(text.strip()) < 10:
-        text = "I'm processing your request. Please try again or use '/help' to see available commands."
+    # ✅ NEW: Enforce Telegram length limits
+    safe_text = ensure_telegram_message_length(text)
     
-    print(f"🔍 SEND_TELEGRAM_MESSAGE: Sending {len(text)} chars to {chat_id}")
+    # Ensure response has minimum length and content
+    if len(safe_text.strip()) < 10:
+        safe_text = "I'm processing your request. Please try again or use '/help' to see available commands."
+    
+    print(f"🔍 SEND_TELEGRAM_MESSAGE: Sending {len(safe_text)} chars to {chat_id}")
     
     try:
         response = requests.post(
             f"{TELEGRAM_API_URL}/sendMessage",
             json={
                 "chat_id": chat_id,
-                "text": text,
+                "text": safe_text,
                 "parse_mode": "Markdown"
             },
             timeout=10
@@ -2617,7 +2620,7 @@ def process_telegram_message(chat_id, incoming_msg):
 
     # ✅ Clear stale continue data for new commands
     if (session.get('continue_data') and 
-        incoming_msg.strip() not in ['cont'] and
+        incoming_msg.strip().lower() not in ['cont', 'continue'] and
         not any(session.get(state) for state in ['awaiting_qstn', 'awaiting_4wd', 'awaiting_product_selection', 'onboarding', 'managing_profile'])):
         session['continue_data'] = None
 
@@ -3124,7 +3127,12 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
         emergency_response = generate_emergency_sales_solution(phone_number, user_profile, emergency_desc)
         print(f"🚨 SALES EMERGENCY: Response generated, length: {len(emergency_response)}")
         
-        return emergency_response
+        # ✅ NEW: Use continue system for long sales responses
+        if len(emergency_response) > 1000:
+            first_part = setup_continue_session(session, 'sales', emergency_response, {'emergency': emergency_desc})
+            return first_part
+        else:
+            return emergency_response
     
     # 🚨 CRITICAL FIX: Handle QSTN question input
     if session.get('awaiting_qstn'):
@@ -3146,9 +3154,8 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
             qstn_response = handle_qstn_command(phone_number, user_profile, question)
             print(f"🚨 QSTN: Response generated, length: {len(qstn_response)}")
             
-            # Check if response is long enough to need continuation
+            # ✅ NEW: Use continue system for long QSTN responses
             if len(qstn_response) > 1000:
-                # Use continue system for long responses
                 first_part = setup_continue_session(session, 'qstn', qstn_response, {'question': question})
                 print(f"🚨 QSTN: Using continue system, first part length: {len(first_part)}")
                 return first_part
@@ -3228,18 +3235,23 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
             header = headers.get(output_type, "🎯 MARKETING CONTENT")
             response_text = f"{header} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
             
-            update_message_usage(user_profile['id'])
-            return response_text
+            # ✅ NEW: Use continue system for long ideas/strategies
+            if len(response_text) > 1000:
+                first_part = setup_continue_session(session, output_type, response_text, {'products': selected_products})
+                update_message_usage(user_profile['id'])
+                return first_part
+            else:
+                update_message_usage(user_profile['id'])
+                return response_text
         else:
             session['awaiting_product_selection'] = False
             return "I didn't understand your product selection. Please reply 'ideas' or 'strat' to try again."
-       
+    
     # 🚨 PRIORITY 2: Handle M-Pesa subscription flow with subscription check
     mpesa_flow = session.get('mpesa_subscription_flow')
     if mpesa_flow:
         current_step = mpesa_flow.get('step', 'plan_selection')
         print(f"🔍 MPESA FLOW: Current step = {current_step}")
-        pass
 
         # Check if user already has active subscription
         has_active_sub = check_subscription(user_profile['id'])
@@ -3314,14 +3326,14 @@ Reply with *1*, *2*, or *3*:"""
             if incoming_msg == '1':  # Selected Growth (from Basic) or Pro (from Growth)
                 if current_plan == 'basic':
                     selected_plan = 'growth'
-            else:  # growth → pro
-                 selected_plan = 'pro'   
+                else:  # growth → pro
+                     selected_plan = 'pro'   
 
-            session['mpesa_subscription_flow']['selected_plan'] = selected_plan
-            session['mpesa_subscription_flow']['step'] = 'duration_selection'  # Use existing duration flow
+                session['mpesa_subscription_flow']['selected_plan'] = selected_plan
+                session['mpesa_subscription_flow']['step'] = 'duration_selection'  # Use existing duration flow
 
-            plan_info = ENHANCED_PLANS[selected_plan]
-            return f"""✅ Selected *UPGRADE to {selected_plan.upper()} Plan*
+                plan_info = ENHANCED_PLANS[selected_plan]
+                return f"""✅ Selected *UPGRADE to {selected_plan.upper()} Plan*
 
         *Now choose payment duration:*
 
@@ -3336,17 +3348,17 @@ Reply with *1*, *2*, or *3*:"""
 
        Reply with *1-6*:"""
            
-        elif incoming_msg == '2':  # Selected Pro from Basic
-            # Get current plan from session flow data
-            current_plan = mpesa_flow.get('current_plan', 'basic')
-    
-            if current_plan == 'basic':
-                selected_plan = 'pro'
-                session['mpesa_subscription_flow']['selected_plan'] = selected_plan
-                session['mpesa_subscription_flow']['step'] = 'duration_selection'
+            elif incoming_msg == '2':  # Selected Pro from Basic
+                # Get current plan from session flow data
+                current_plan = mpesa_flow.get('current_plan', 'basic')
+        
+                if current_plan == 'basic':
+                    selected_plan = 'pro'
+                    session['mpesa_subscription_flow']['selected_plan'] = selected_plan
+                    session['mpesa_subscription_flow']['step'] = 'duration_selection'
 
-            plan_info = ENHANCED_PLANS[selected_plan]
-            return f"""✅ Selected *UPGRADE to PRO Plan*
+                plan_info = ENHANCED_PLANS[selected_plan]
+                return f"""✅ Selected *UPGRADE to PRO Plan*
 
         *Now choose payment duration:*
 
@@ -3360,243 +3372,12 @@ Reply with *1*, *2*, or *3*:"""
         💡 *Upgrade Benefit:* You get full access to PRO features immediately!  
 
         Reply with *1-6*:"""  
-             
-        else:  # growth → cancelled
-            clear_mpesa_subscription_flow(session)
-            return "Upgrade cancelled. Keeping your Growth plan. Use /status to check your subscription."
-    
-    else:
-        return "Please choose a valid option (1 or 2)."
-          
-        # 🚨 FIX: Handle cancellation within M-Pesa flow for all steps
-        if clean_msg in ['cancel', 'exit']:
-            print(f"🔄 CANCELLING MPESA FLOW: {clean_msg}")
-            clear_mpesa_subscription_flow(session)
-            return "Payment process cancelled. Returning to main menu."
-        
-                
-            # Check if payment might have been completed
-            checkout_id = mpesa_flow.get('mpesa_checkout_id')
-            if checkout_id:
-                checkout_session = find_checkout_session(checkout_id)
-                if not checkout_session:
-                    # Checkout session deleted = payment likely completed
-                    print(f"🔄 Auto-clearing completed payment session: {checkout_id}")
-                    clear_mpesa_subscription_flow(session)
-                    return "🔄 Your payment session has been cleared. Please check your subscription status with 'status' command."
-            
-            return "⏳ Still waiting for your M-Pesa payment confirmation. Please complete the payment on your phone or reply 'cancel' to abort."
-        
-        if current_step == 'plan_selection':
-            if incoming_msg.strip() in ['1', '2', '3']:
-                plans = ['basic', 'growth', 'pro']
-                selected_plan = plans[int(incoming_msg.strip()) - 1]
-                session['mpesa_subscription_flow']['selected_plan'] = selected_plan
-                session['mpesa_subscription_flow']['step'] = 'duration_selection'
-                
-                plan_info = ENHANCED_PLANS[selected_plan]
-                return f"""✅ Selected *{selected_plan.upper()} Plan: {plan_info['description']}*
-
-*Now choose duration:*
-1. 📅 *Weekly* - KSh {plan_info['weekly_price']}
-2. 📅 *Monthly* - KSh {plan_info['monthly_price']} 
-3. 📅 *Quarterly* - KSh {round(plan_info['monthly_price'] * 3 * 0.9)} (10% off)
-4. 📅 *Annual* - KSh {round(plan_info['monthly_price'] * 12 * 0.8)} (20% off)
-5. 📅 *Custom* (2-11 months) - 5% discount
-
-Reply with number (1-5):"""
-            else:
-                return "Please select a valid plan (1, 2, or 3)"
-        
-        elif current_step == 'duration_selection':
-            durations = ['weekly', 'monthly', 'quarterly', 'annual', 'custom']
-            if incoming_msg.strip() in ['1', '2', '3', '4', '5']:
-                selected_duration = durations[int(incoming_msg.strip()) - 1]
-                
-                if selected_duration == 'custom':
-                    session['mpesa_subscription_flow']['step'] = 'custom_months_input'
-                    return """📅 CUSTOM DURATION
-
-Enter number of months (2-11 months):
-• 5% discount applied
-• Better value than monthly
-• Flexible duration
-
-How many months would you like to subscribe for?"""
-                
-                selected_plan = session['mpesa_subscription_flow']['selected_plan']
-                
-                # Calculate price
-                price_info, error = calculate_subscription_price(selected_plan, selected_duration)
-                if error:
-                    return f"Error: {error}"
-                
-                session['mpesa_subscription_flow']['selected_duration'] = selected_duration
-                session['mpesa_subscription_flow'].update(price_info)
-                session['mpesa_subscription_flow']['step'] = 'phone_input'
-                
-                return f"""📋 *SUBSCRIPTION SUMMARY:*
-
-*Plan:* {selected_plan.upper()}
-*Duration:* {selected_duration.title()}
-*Amount:* KSh {price_info['final_amount']}
-
-💳 Enter M-Pesa phone number for payment *(e.g., 0712345678)*:
-• This can be different from your registered number
-• You'll *receive STK push on this number*"""
-            else:
-                return "Please select a valid duration (1, 2, 3, 4, or 5)"
-            
-        elif current_step == 'custom_months_input':
-            try:
-                custom_months = int(incoming_msg.strip())
-                if 2 <= custom_months <= 11:
-                    selected_plan = session['mpesa_subscription_flow']['selected_plan']
-                    
-                    # Calculate price with custom months
-                    price_info, error = calculate_subscription_price(selected_plan, 'custom', custom_months)
-                    if error:
-                        return f"Error: {error}"
-                    
-                    session['mpesa_subscription_flow']['selected_duration'] = 'custom'
-                    session['mpesa_subscription_flow']['custom_months'] = custom_months
-                    session['mpesa_subscription_flow'].update(price_info)
-                    session['mpesa_subscription_flow']['step'] = 'phone_input'
-                    
-                    return f"""📋 *SUBSCRIPTION SUMMARY:*
-
-*Plan:* {selected_plan.upper()}
-*Duration:* {custom_months} Months (Custom)
-*Original:* KSh {price_info['original_amount']}
-*Discount:* {price_info['discount_percent']}%
-*Final Amount:* KSh {price_info['final_amount']}
-
-💳 Enter M-Pesa phone number for payment *(e.g., 0712345678)*:
-• This can be different from your registered number
-• You'll receive STK push on this number"""
-                else:
-                    return "Please enter a number between 2 and 11 months."
-            except ValueError:
-                return "Please enter a valid number (2-11 months)."
-        
-        elif current_step == 'phone_input':
-            # Validate and set payment phone number
-            is_valid, formatted_phone, message = validate_kenyan_phone_number(incoming_msg.strip())
-            if is_valid:
-                session['mpesa_subscription_flow']['payment_phone_number'] = formatted_phone
-                session['mpesa_subscription_flow']['payment_number_provided'] = True
-                session['mpesa_subscription_flow']['step'] = 'payment_confirmation'
-                
-                selected_plan = session['mpesa_subscription_flow']['selected_plan']
-                selected_duration = session['mpesa_subscription_flow']['selected_duration']
-                amount = session['mpesa_subscription_flow']['final_amount']
-                
-                return f"""✅ Payment number set: *{format_phone_for_display(formatted_phone)}*
-
-📋 *FINAL CONFIRMATION:*
-*Plan:* {selected_plan.upper()} - {selected_duration.title()}
-*Amount:* KSh {amount}
-*Phone:* {format_phone_for_display(formatted_phone)}
-
-Reply *'PAY'* to initiate M-Pesa payment or *'CANCEL'* to abort."""
-            else:
-                return f"❌ Invalid phone number: {message}\n\nPlease enter a valid M-Pesa number (e.g., 0712345678):"
-        
-        elif current_step == 'payment_confirmation':
-            if incoming_msg.strip().lower() == 'pay':
-                # Initiate payment
-                chat_phone = session['mpesa_subscription_flow']['current_chat_phone']
-                payment_phone = session['mpesa_subscription_flow']['payment_phone_number']
-                plan_type = session['mpesa_subscription_flow']['selected_plan']
-                amount = session['mpesa_subscription_flow']['final_amount']
-                duration_type = session['mpesa_subscription_flow']['selected_duration']
-                
-                account_ref = generate_account_reference(plan_type, duration_type)
-                
-                checkout_id, message = initiate_mpesa_payment(payment_phone, amount, plan_type, account_ref)
-                
-                if checkout_id:
-                    session['mpesa_subscription_flow']['mpesa_checkout_id'] = checkout_id
-                    session['mpesa_subscription_flow']['step'] = 'awaiting_payment'
-                    session['mpesa_subscription_flow']['mpesa_account_reference'] = account_ref
-
-                    store_checkout_session(
-                        checkout_id, 
-                        session['mpesa_subscription_flow'],
-                        {
-                            'selected_plan': plan_type,
-                            'selected_duration': duration_type,
-                            'final_amount': amount,
-                            'mpesa_account_reference': account_ref
-                        }
-                    )
-
-                    return f"💳 M-Pesa STK Push sent to {format_phone_for_display(payment_phone)}!\n\nCheck your phone for M-Pesa prompt to complete payment of KSh {amount}.\n\nI'll notify you when payment is confirmed. ✅"
-                else:
-                    return f"❌ Payment initiation failed: {message}\n\nPlease try again or contact support."
-            
-            elif incoming_msg.strip().lower() == 'cancel':
+                 
+            else:  # growth → cancelled
                 clear_mpesa_subscription_flow(session)
-                return "Subscription cancelled. Returning to main menu."
-            else:
-                return "Please reply 'PAY' to continue or 'CANCEL' to abort."
-        
-        elif current_step == 'awaiting_payment':
-            # Check if payment might have been completed
-            checkout_id = mpesa_flow.get('mpesa_checkout_id')
-            if checkout_id:
-                checkout_session = find_checkout_session(checkout_id)
-                if not checkout_session:
-                    # Checkout session deleted = payment likely completed
-                    print(f"🔄 Auto-clearing completed payment session: {checkout_id}")
-                    clear_mpesa_subscription_flow(session)
-                    return "🔄 Your payment session has been cleared. Please check your subscription status with 'status' command."
-            
-            return "⏳ Still waiting for your M-Pesa payment confirmation. Please complete the payment on your phone or reply *'cancel'* to abort."
+                return "Upgrade cancelled. Keeping your Growth plan. Use /status to check your subscription."
     
-    # ✅ Handle existing session states (QSTN, 4WD, product selection)
-    if session.get('awaiting_qstn'):
-        session['awaiting_qstn'] = False
-        update_message_usage(user_profile['id'])
-        question = incoming_msg.strip()
-        if not question or len(question) < 5:
-            return "Please ask a specific business question (at least 5 characters). Use /qstn to try again."
-        
-        qstn_response = handle_qstn_command(phone_number, user_profile, question)
-        return qstn_response
-    
-    elif session.get('awaiting_4wd'):
-        session['awaiting_4wd'] = False
-        customer_message = incoming_msg.strip()
-        if not customer_message or len(customer_message) < 5:
-            return "Please provide a customer message to analyze (at least 5 characters). Use /4wd to try again."
-        
-        analysis_response = handle_4wd_command(phone_number, user_profile, customer_message)
-        return analysis_response
-    
-    elif session.get('awaiting_product_selection'):
-        selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
-        if error_message:
-            return error_message
-        elif selected_products:
-            session['awaiting_product_selection'] = False
-            output_type = session.get('output_type', 'ideas')
-            
-            session['output_type'] = None
-            
-            ideas = generate_realistic_ideas(user_profile, selected_products, output_type)
-            headers = {
-                'ideas': "🎯 SOCIAL MEDIA CONTENT IDEAS",
-                'pro_ideas': "🚀 PREMIUM VIRAL CONTENT CONCEPTS", 
-                'strategies': "📊 COMPREHENSIVE MARKETING STRATEGY"
-            }
-            header = headers.get(output_type, "🎯 MARKETING CONTENT")
-            return f"{header} FOR {', '.join(selected_products).upper()}:\n\n{ideas}"
-        else:
-            session['awaiting_product_selection'] = False
-            return "I didn't understand your product selection. Please use /ideas or /strat to try again."
-    
-    # Default response
+    # Default response for unrecognized messages
     business_context = ""
     if user_profile.get('business_name'):
         business_context = f" {user_profile['business_name']}"
