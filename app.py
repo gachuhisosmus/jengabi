@@ -2513,6 +2513,23 @@ def telegram_webhook():
         import traceback
         print(f"❌ TELEGRAM TRACEBACK: {traceback.format_exc()}")
         return "OK"
+    
+def ensure_telegram_message_length(text, max_length=4000):
+    """Ensure message doesn't exceed Telegram limits with safe truncation"""
+    if not text or len(text) <= max_length:
+        return text
+    
+    # Find a safe truncation point
+    truncate_point = text[:max_length-100].rfind('\n\n')
+    if truncate_point == -1:
+        truncate_point = text[:max_length-100].rfind('. ')
+    if truncate_point == -1:
+        truncate_point = text[:max_length-100].rfind(' ')
+    if truncate_point == -1:
+        truncate_point = max_length - 100
+    
+    truncated = text[:truncate_point].strip()
+    return truncated + f"\n\n💡 Message too long. Use 'cont' to continue or ask a more specific question."
 
 def send_telegram_message(chat_id, text):
     """Send message to Telegram user - WITH ENHANCED EMPTY RESPONSE PROTECTION"""
@@ -3866,7 +3883,13 @@ def cleanup_expired_subscriptions():
             if end_date_str:
                 try:
                     end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
-                    if datetime.now() > end_date:
+                    
+                    if end_date.tzinfo is not None:
+                        current_time = datetime.now(timezone.utc)
+                    else:
+                        current_time = datetime.now()
+                    
+                    if current_time > end_date:
                         # Deactivate expired subscription
                         supabase.table('subscriptions').update({
                             'is_active': False,
@@ -4850,8 +4873,13 @@ def check_subscription(profile_id):
             try:
                 # Make both datetimes timezone-aware for comparison
                 end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
-                current_time = datetime.now(timezone.utc)  # 🚨 NOW timezone is defined
                 
+                # Make current_time timezone-aware to match end_date
+                if end_date.tzinfo is not None:  # end_date is timezone-aware
+                    current_time = datetime.now(timezone.utc)
+                else:  # end_date is timezone-naive
+                    current_time = datetime.now()
+
                 if current_time > end_date:
                     # Subscription expired - auto deactivate
                     print(f"🔄 SUBSCRIPTION EXPIRED: Auto-deactivating {profile_id}")
@@ -4885,7 +4913,12 @@ def get_user_plan_info(profile_id):
                 try:
                     # Make both datetimes timezone-aware
                     end_date = datetime.fromisoformat(end_date_str.replace('Z', '+00:00'))
-                    current_time = datetime.now(timezone.utc)  # 🚨 NOW timezone is defined
+                    
+                    # Match timezone awareness
+                    if end_date.tzinfo is not None:
+                        current_time = datetime.now(timezone.utc)
+                    else:
+                        current_time = datetime.now()
                     
                     if current_time > end_date:
                         # Return None for expired subscriptions
