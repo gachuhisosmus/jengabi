@@ -1093,11 +1093,11 @@ def handle_subscription_plan_selection(phone_number, user_input, session):
     plan_choices = {
         '1': 'basic',
         '2': 'growth', 
-        '3': 'pro'
+        #'3': 'pro'
     }
     
     if user_input not in plan_choices:
-        return "Please choose a valid plan (1, 2, or 3):"
+        return "Please choose a valid plan (1, or 2):"
     
     selected_plan = plan_choices[user_input]
     session['mpesa_subscription_flow']['selected_plan'] = selected_plan
@@ -2888,9 +2888,9 @@ def get_telegram_help(user_profile):
             if plan_type in ['growth', 'pro']:
                 help_message += "\n• /strat - Marketing strategies"
             
-            if plan_type == 'pro':
-                help_message += "\n• /trends - Real-time market alerts"
-                help_message += "\n• /competitor - Competitor intelligence"
+            #if plan_type == 'pro':
+            #    help_message += "\n• /trends - Real-time market alerts"
+             #   help_message += "\n• /competitor - Competitor intelligence"
         
         help_message += "\n\n*🔧 MANAGEMENT COMMANDS:*"
         help_message += "\n• /profile - Business profile"
@@ -3110,7 +3110,7 @@ Would you like to:
 • Advanced features unlocked
 • Better value for your business
 
-Reply with *1*, *2*, or *3*:"""
+Reply with *1*, or *2*, or *3*:"""
     
     # No active subscription - proceed with normal flow
     if not user_profile.get('profile_complete'):
@@ -3131,12 +3131,8 @@ Choose your plan:
    • 15 ideas + Marketing strategies
    • All Basic features
 
-3. 💎 *PRO* - KSh 599/month or KSh 150/week
-   • Unlimited ideas + Advanced strategies
-   • Real-time trends + Competitor insights
-   • All Growth features
 
-Reply with *1*, *2*, or *3*:"""
+Reply with *1*, or *2*,:"""
 
 def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
     """Handle Telegram session states for regular messages - WITH SUBSCRIPTION FLOW FIX"""
