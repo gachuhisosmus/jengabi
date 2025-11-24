@@ -4239,6 +4239,29 @@ def start_business_onboarding(phone_number, user_profile):
     
     return "👋 Let's set up your business profile!\n\nI need to know about your business first to create personalized marketing content.\n\n*Question 1/7:* What's your business name?\n\n💡 You can reply 'help' for assistance or 'cancel' to stop at any time."
 
+def check_profile_completion(profile_data):
+    """Check if profile has all required fields completed"""
+    required_fields = [
+        'business_name', 
+        'business_type', 
+        'business_location',
+        'business_phone', 
+        'business_products', 
+        'business_marketing_goals'
+    ]
+    
+    # Check all required fields exist and are not empty
+    for field in required_fields:
+        value = profile_data.get(field)
+        if not value:
+            return False
+        if isinstance(value, list) and len(value) == 0:
+            return False
+        if isinstance(value, str) and len(value.strip()) == 0:
+            return False
+    
+    return True
+
 def handle_onboarding_response(phone_number, incoming_msg, user_profile):
     """Handle business profile onboarding steps"""
     session = ensure_user_session(phone_number)
@@ -4289,13 +4312,26 @@ You can also reply 'cancel' to stop onboarding."""
                 **business_data,
                 'profile_complete': True,
                 'updated_at': datetime.now().isoformat()
-            }).eq('id', user_profile['id']).execute()
+            }).eq('id', user_profile['id']).execute()      
             
             print(f"✅ PROFILE SAVED TO DATABASE: {update_result}")
             
         except Exception as e:
             print(f"❌ ERROR saving business data: {e}")
             return False, "❌ Error saving your profile. Please try again."
+        
+                # ✅ NEW: Force profile completion check for existing profiles
+        # This fixes users who have complete profiles but profile_complete=False
+        try:
+            # Check if profile is actually complete but flag is wrong
+            complete_check = check_profile_completion(business_data)
+            if complete_check and not business_data.get('profile_complete'):
+                print(f"🔄 FIXING profile_complete flag for {user_profile['id']}")
+                supabase.table('profiles').update({
+                    'profile_complete': True
+                }).eq('id', user_profile['id']).execute()
+        except Exception as e:
+            print(f"⚠️ Profile completion fix error: {e}")
         
         # Clear onboarding session - ONLY IF SAVE SUCCESSFUL
         session['onboarding'] = False
@@ -5287,9 +5323,13 @@ def handle_profile_management(phone_number, incoming_msg, user_profile):
             return start_product_management(phone_number, user_profile)
         
         elif incoming_msg == '8':
-            # Show full profile and return to menu
+            # Show full profile and EXIT profile management
             full_profile = get_full_profile_summary(user_profile)
-            return False, f"{full_profile}\n\nWhat would you like to update? (Reply 1-9)"
+            session.update({
+                'managing_profile': False,  # ← EXIT management
+                'profile_step': None
+            })
+            return True, f"{full_profile}\n\n✅ Profile management completed. Use /help to see available commands."
         
         elif incoming_msg == '9':
             # Exit profile management
