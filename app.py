@@ -1601,14 +1601,14 @@ ENHANCED_PLANS = {
         'output_type': 'ideas_strategy',
         'mpesa_code': 'GROWTH'
     },
-    'pro': {
-        'monthly_price': 599,
-        'weekly_price': 150,
-        'description': 'Unlimited ideas + Full strategies + Real-time trends + Competitor insights + Business Q&A + Customer message analysis and experience improvement',
-        'commands': ['ideas', 'strat', 'trends', 'competitor', '4wd', 'qstn'],
-        'output_type': 'strategies',
-        'mpesa_code': 'PRO'
-    }
+    #'pro': {
+       # 'monthly_price': 599,
+       # 'weekly_price': 150,
+        #'description': 'Unlimited ideas + Full strategies + Real-time trends + Competitor insights + Business Q&A + Customer message analysis and experience improvement',
+        #'commands': ['ideas', 'strat', 'trends', 'competitor', '4wd', 'qstn'],
+        #'output_type': 'strategies',
+        #'mpesa_code': 'PRO'
+    #}
 }
 
 # ===== PLAN MESSAGE LIMITS =====
@@ -2847,8 +2847,8 @@ def get_telegram_status(user_profile):
 
 💡 Reply *'ideas'* for social media marketing content"""
                 
-                if plan_type == 'pro':
-                    status_message += "\n\n*🎯 PRO FEATURES:*\n• /trends - Real-time analysis\n• /competitor - Competitor intelligence"
+                #if plan_type == 'pro':
+                    #status_message += "\n\n*🎯 PRO FEATURES:*\n• /trends - Real-time analysis\n• /competitor - Competitor intelligence"
                     
             else:
                 status_message = "❌ Could not fetch your current usage data. Please try again."
@@ -3339,12 +3339,8 @@ Reply with *1*, *2*, or *3*:"""
         • 15 ideas/week + Marketing strategies  
         • All Basic features
 
-        2. 💎 *PRO* - KSh 599/month or KSh 150/week
-        • Unlimited ideas + Advanced strategies
-        • Real-time trends + Competitor insights
-        • All Growth features
-
-        Reply with *1* or *2*:"""
+        
+        Reply with *1*:"""
                 else:  # growth → pro
                     return """💎 UPGRADE FROM GROWTH PLAN
 
