@@ -2408,6 +2408,32 @@ def test_image_setup():
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }), 500
+    
+@app.route('/test-database', methods=['GET'])
+def test_database():
+    """Test database connectivity"""
+    try:
+        # Test profiles table
+        profiles_response = supabase.table('profiles').select('id').limit(1).execute()
+        
+        # Test user_credits table  
+        credits_response = supabase.table('user_credits').select('*').limit(1).execute()
+        
+        return jsonify({
+            "status": "success",
+            "profiles_table_working": len(profiles_response.data) > 0,
+            "user_credits_table_working": len(credits_response.data) > 0,
+            "profiles_count": len(profiles_response.data),
+            "credits_count": len(credits_response.data),
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error", 
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
 
 # ===== MPESA CALLBACK ROUTE =====
 @app.route('/mpesa-callback', methods=['POST'])
