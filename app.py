@@ -226,7 +226,8 @@ def get_user_credits(profile_id):
                 credits['image_credits'] = 0
             return credits
         else:
-            # Initialize if not exists
+            # ✅ CRITICAL FIX: Create credit record if doesn't exist
+            print(f"🔄 Creating credit record for {profile_id}")
             return initialize_user_credits(profile_id)
     except Exception as e:
         print(f"Error getting user credits: {e}")
