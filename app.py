@@ -216,17 +216,52 @@ def initialize_user_credits(profile_id):
         return None
 
 def get_user_credits(profile_id):
-    """Get user's current credits"""
+    """Get user's current credits including image credits"""
     try:
         response = supabase.table('user_credits').select('*').eq('profile_id', profile_id).execute()
         if response.data:
-            return response.data[0]
+            credits = response.data[0]
+            # Ensure image_credits field exists
+            if 'image_credits' not in credits:
+                credits['image_credits'] = 0
+            return credits
         else:
             # Initialize if not exists
             return initialize_user_credits(profile_id)
     except Exception as e:
         print(f"Error getting user credits: {e}")
-        return None
+        return {'image_credits': 0, 'enhancement_credits': 0, 'caption_credits': 0}
+    
+def initialize_user_credits(profile_id):
+    """Initialize credits for new users based on their plan"""
+    try:
+        # Get user's current plan
+        subscription = supabase.table('subscriptions').select('plan_type').eq('profile_id', profile_id).eq('is_active', True).execute()
+        
+        # Default credits based on plan
+        if subscription.data:
+            plan_type = subscription.data[0].get('plan_type', 'basic')
+            credits_map = {
+                'basic': {'image_credits': 3, 'enhancement_credits': 5, 'caption_credits': 20},
+                'growth': {'image_credits': 10, 'enhancement_credits': 15, 'caption_credits': 50},
+                'pro': {'image_credits': 999, 'enhancement_credits': 50, 'caption_credits': 200}
+            }
+            credits = credits_map.get(plan_type, credits_map['basic'])
+        else:
+            # Free trial credits
+            credits = {'image_credits': 1, 'enhancement_credits': 1, 'caption_credits': 5}
+        
+        # Insert credits record
+        supabase.table('user_credits').insert({
+            'profile_id': profile_id,
+            **credits
+        }).execute()
+        
+        print(f"✅ Credits initialized for {profile_id}: {credits}")
+        return credits
+    except Exception as e:
+        print(f"Error initializing user credits: {e}")
+        return {'image_credits': 0, 'enhancement_credits': 0, 'caption_credits': 0}
 
 def update_user_credits(profile_id, credit_type, amount_used=1):
     """Update user credits after feature usage"""
@@ -2346,6 +2381,33 @@ def fix_user_limits():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    
+@app.route('/test-image-setup', methods=['GET'])
+def test_image_setup():
+    """Test image service setup"""
+    try:
+        from image_service import ImageService
+        
+        # Test Cloudinary configuration
+        image_service = ImageService()
+        
+        # Test database
+        credits_response = supabase.table('user_credits').select('*').limit(1).execute()
+        
+        return jsonify({
+            "status": "success",
+            "cloudinary_configured": image_service.cloudinary_configured,
+            "database_working": len(credits_response.data) > 0,
+            "image_credits_column_exists": 'image_credits' in credits_response.data[0] if credits_response.data else False,
+            "timestamp": datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
 
 # ===== MPESA CALLBACK ROUTE =====
 @app.route('/mpesa-callback', methods=['POST'])
