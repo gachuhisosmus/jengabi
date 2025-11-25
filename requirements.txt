@@ -8,3 +8,4 @@ gunicorn
 schedule
 pytrends
 flask_limiter
+cloudinary>=1.25.0
