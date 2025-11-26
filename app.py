@@ -32,7 +32,7 @@ def safe_supabase_operation(operation, fallback_value=None):
         return fallback_value
     
 def force_profile_completion_fix(phone_number):
-    """Emergency fix to ensure profile_complete is set to True for completed profiles"""
+    """Emergency fix to ensure profile_complete is set to True for completed profiles - SAFER VERSION"""
     try:
         # Get user profile
         response = supabase.table('profiles').select('*').eq('phone_number', phone_number).execute()
@@ -43,8 +43,8 @@ def force_profile_completion_fix(phone_number):
         profile_id = user_profile['id']
         
         # Check if profile has all required data but profile_complete is False
-        required_fields = ['business_name', 'business_type', 'business_location', 'business_phone', 'business_products']
-        has_required_data = all(user_profile.get(field) for field in required_fields)
+        required_fields = ['business_name', 'business_type', 'business_location', 'business_phone']
+        has_required_data = all(user_profile.get(field) for field in required_fields if user_profile.get(field) not in [None, '', []])
         
         if has_required_data and not user_profile.get('profile_complete'):
             print(f"🔄 FIXING profile_complete for {phone_number}")
@@ -53,11 +53,13 @@ def force_profile_completion_fix(phone_number):
                 'profile_complete': True,
                 'updated_at': datetime.now().isoformat()
             }).eq('id', profile_id).execute()
+            print(f"✅ Successfully fixed profile_complete for {phone_number}")
             return True
         
         return False
     except Exception as e:
         print(f"❌ Error in profile completion fix: {e}")
+        # Don't break the flow - just log the error and continue
         return False    
 
 # Load environment variables
@@ -2757,7 +2759,7 @@ def process_telegram_message(chat_id, incoming_msg):
     phone_number = f"telegram:{chat_id}"
     user_profile = get_or_create_profile(phone_number)
 
-    orce_profile_completion_fix(phone_number)
+    force_profile_completion_fix(phone_number)
     # Refresh profile after potential fix
     user_profile = get_or_create_profile(phone_number)
     
