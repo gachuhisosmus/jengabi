@@ -30,6 +30,35 @@ def safe_supabase_operation(operation, fallback_value=None):
         import traceback
         print(f"❌ Full traceback: {traceback.format_exc()}")
         return fallback_value
+    
+def force_profile_completion_fix(phone_number):
+    """Emergency fix to ensure profile_complete is set to True for completed profiles"""
+    try:
+        # Get user profile
+        response = supabase.table('profiles').select('*').eq('phone_number', phone_number).execute()
+        if not response.data:
+            return False
+        
+        user_profile = response.data[0]
+        profile_id = user_profile['id']
+        
+        # Check if profile has all required data but profile_complete is False
+        required_fields = ['business_name', 'business_type', 'business_location', 'business_phone', 'business_products']
+        has_required_data = all(user_profile.get(field) for field in required_fields)
+        
+        if has_required_data and not user_profile.get('profile_complete'):
+            print(f"🔄 FIXING profile_complete for {phone_number}")
+            # Force update profile_complete to True
+            supabase.table('profiles').update({
+                'profile_complete': True,
+                'updated_at': datetime.now().isoformat()
+            }).eq('id', profile_id).execute()
+            return True
+        
+        return False
+    except Exception as e:
+        print(f"❌ Error in profile completion fix: {e}")
+        return False    
 
 # Load environment variables
 load_dotenv()
@@ -71,6 +100,37 @@ def home():
             "webhook": "/webhook (POST)"
         }
     })
+
+@app.route('/fix-telegram-profiles', methods=['GET'])
+def fix_telegram_profiles():
+    """Emergency endpoint to fix all Telegram user profiles"""
+    try:
+        # Find all Telegram users with incomplete profiles but complete data
+        response = supabase.table('profiles').select('*').like('phone_number', 'telegram:%').execute()
+        
+        fixed_count = 0
+        for profile in response.data:
+            if not profile.get('profile_complete'):
+                # Check if they have complete business data
+                required_fields = ['business_name', 'business_type', 'business_location', 'business_phone']
+                has_data = all(profile.get(field) for field in required_fields)
+                
+                if has_data:
+                    supabase.table('profiles').update({
+                        'profile_complete': True,
+                        'updated_at': datetime.now().isoformat()
+                    }).eq('id', profile['id']).execute()
+                    fixed_count += 1
+                    print(f"✅ Fixed profile for: {profile.get('business_name')}")
+        
+        return jsonify({
+            'status': 'success',
+            'fixed_count': fixed_count,
+            'message': f'Fixed {fixed_count} Telegram user profiles'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # ===== ENVIRONMENT VERIFICATION ROUTE =====
 @app.route('/env-check', methods=['GET'])
@@ -2696,6 +2756,10 @@ def process_telegram_message(chat_id, incoming_msg):
     """Process message using EXACT SAME logic as WhatsApp webhook - FIXED VERSION"""
     phone_number = f"telegram:{chat_id}"
     user_profile = get_or_create_profile(phone_number)
+
+    orce_profile_completion_fix(phone_number)
+    # Refresh profile after potential fix
+    user_profile = get_or_create_profile(phone_number)
     
     if not user_profile:
         return "Sorry, I'm having technical issues. Please try again."
@@ -3044,6 +3108,10 @@ def handle_telegram_commands(phone_number, user_profile, command):
     print(f"🔍 TELEGRAM COMMAND DEBUG: Processing '{command}'")
     
     session = ensure_user_session(phone_number)
+
+    force_profile_completion_fix(phone_number)
+    # Refresh user profile after potential fix
+    user_profile = get_or_create_profile(phone_number)
 
     # 🚨 COMPREHENSIVE RESET: Clear ALL states for new commands
     reset_session_states(session, keep_mpesa_flow=(command == 'subscribe'))
