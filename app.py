@@ -3299,6 +3299,11 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
     
     print(f"🔍 TELEGRAM SESSION STATES: Processing '{incoming_msg}', states: { {k: v for k, v in session.items() if v} }")
 
+    # Check what step we're in
+    mpesa_flow = session.get('mpesa_subscription_flow')
+    if mpesa_flow:
+        print(f"🔍 MPESA FLOW DEBUG: Current step = '{mpesa_flow.get('step')}', incoming_msg = '{incoming_msg}'")
+
     # 🚨 PRIORITY 1: Handle exit/cancel commands FIRST - before M-Pesa flow
     clean_msg = incoming_msg.strip().lower()
     exit_commands = ['cancel', 'exit', 'back', 'menu', 'start', 'help', 'status']
@@ -3319,6 +3324,22 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
                 'continue_data': None
             })
             return "Returning to main menu. Use /help to see available commands."
+        
+    # 🚨 CRITICAL FIX: Check if we're in M-Pesa flow but missing the plan selection handler
+    mpesa_flow = session.get('mpesa_subscription_flow')
+    if mpesa_flow:
+        current_step = mpesa_flow.get('step', 'plan_selection')
+        print(f"🔍 MPESA FLOW PROCESSING: step='{current_step}', msg='{incoming_msg}'")
+        
+        # 🆕 ADD MISSING PLAN SELECTION HANDLER
+        if current_step == 'plan_selection':
+            print(f"🔍 PROCESSING PLAN SELECTION: '{incoming_msg}'")
+            response = handle_subscription_plan_selection(phone_number, incoming_msg, session)
+            if response:
+                print(f"🔍 PLAN SELECTION RESPONSE: {len(response)} chars")
+                return response
+            else:
+                print(f"❌ PLAN SELECTION FAILED for '{incoming_msg}'")
     
     # 🆕 CRITICAL FIX: Handle sales emergency response
     if session.get('awaiting_sales_emergency'):
@@ -3334,14 +3355,14 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
         emergency_response = generate_emergency_sales_solution(phone_number, user_profile, emergency_desc)
         print(f"🚨 SALES EMERGENCY: Response generated, length: {len(emergency_response)}")
         
-        # ✅ NEW: Use continue system for long sales responses
+        # ✅ Use continue system for long sales responses
         if len(emergency_response) > 1000:
             first_part = setup_continue_session(session, 'sales', emergency_response, {'emergency': emergency_desc})
             return first_part
         else:
             return emergency_response
     
-    # 🚨 CRITICAL FIX: Handle QSTN question input
+    # 🚨 Handle QSTN question input
     if session.get('awaiting_qstn'):
         print(f"🚨 QSTN FOLLOW-UP: Processing question: '{incoming_msg}'")
         
@@ -3413,7 +3434,7 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
         print(f"🔄 AUTO-RESET: output_type without active command - {session.get('output_type')}")
         session['output_type'] = None
 
-    # 🚨 CRITICAL FIX: Handle product selection
+    # 🚨 Handle product selection
     if session.get('awaiting_product_selection'):
         print(f"🔄 PRODUCT SELECTION: Processing '{incoming_msg}'")
         selected_products, error_message = handle_product_selection(incoming_msg, user_profile, phone_number)
@@ -3426,7 +3447,7 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
             session['awaiting_product_selection'] = False
             output_type = session.get('output_type', 'ideas')
             
-            # 🚨 CRITICAL: Clear output_type immediately after use
+            # 🚨 Clear output_type immediately after use
             session['output_type'] = None
             
             print(f"🔄 GENERATING IDEAS for {selected_products} with output_type: {output_type}")
@@ -3460,12 +3481,12 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
         current_step = mpesa_flow.get('step', 'plan_selection')
         print(f"🔍 MPESA FLOW: Current step = {current_step}")
 
-        # Check if user already has active subscription
+        # SCENARIO 1: User has active subscription (UPGRADE flow)
         has_active_sub = check_subscription(user_profile['id'])
         if has_active_sub and current_step == 'plan_selection':
             plan_info = get_user_plan_info(user_profile['id'])
             current_plan = plan_info.get('plan_type', 'basic') if plan_info else 'basic'
-            
+        
             # Offer upgrade instead of new subscription
             session['mpesa_subscription_flow']['step'] = 'upgrade_check'
             return f"""🔄 YOU ALREADY HAVE AN ACTIVE SUBSCRIPTION
@@ -3478,9 +3499,20 @@ Would you like to:
 3. *VIEW* current plan details
 
 Reply with *1*, *2*, or *3*:"""
-        
-        # Handle upgrade check step
+    
+        # SCENARIO 2: User has NO subscription (FIRST-TIME subscription)
+        elif not has_active_sub and current_step == 'plan_selection':
+            print(f"🔍 FIRST-TIME SUBSCRIPTION: Processing plan selection '{incoming_msg}'")
+            response = handle_subscription_plan_selection(phone_number, incoming_msg, session)
+            if response:
+                print(f"✅ FIRST-TIME PLAN SELECTION: Returning {len(response)} chars")
+                return response
+            else:
+                return "Please choose a valid plan (1, or 2):"
+    
+        # SCENARIO 3: User is upgrading (already handled in your existing upgrade flow)
         elif current_step == 'upgrade_check':
+            # Your existing upgrade logic continues here...
             plan_info = get_user_plan_info(user_profile['id'])
             current_plan = plan_info.get('plan_type', 'basic') if plan_info else 'basic'
 
@@ -3682,7 +3714,7 @@ Enter your M-Pesa phone number:"""
             except ValueError:
                 return "Please enter a valid number (2-11 months)."
 
-        # 🚨 ADD THIS: Handle phone number input
+        # 🚨 Handle phone number input
         elif current_step == 'phone_input':
             # Validate and set payment phone number
             is_valid, formatted_phone, message = validate_kenyan_phone_number(incoming_msg.strip())
