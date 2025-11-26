@@ -21,6 +21,31 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 
 # ===== SAFE DATABASE OPERATIONS =====
+
+# ===== SAFE DATABASE OPERATIONS =====
+
+# 🆕 ADD THIS DATE PARSER FUNCTION RIGHT HERE
+def parse_mpesa_transaction_date(transaction_date):
+    """Safely parse M-Pesa transaction date from various formats"""
+    try:
+        if not transaction_date:
+            return datetime.now().isoformat()
+            
+        date_str = str(transaction_date)
+        
+        # Handle M-Pesa format: YYYYMMDDHHMMSS (20251126231245)
+        if len(date_str) == 14 and date_str.isdigit():
+            # Parse: 20251126231245 → 2025-11-26 23:12:45
+            formatted_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]} {date_str[8:10]}:{date_str[10:12]}:{date_str[12:14]}"
+            return datetime.strptime(formatted_date, '%Y-%m-%d %H:%M:%S').isoformat()
+        
+        # Handle other formats or return current time as fallback
+        return datetime.now().isoformat()
+        
+    except Exception as e:
+        print(f"⚠️ Date parsing error for '{transaction_date}', using current time: {e}")
+        return datetime.now().isoformat()
+
 def safe_supabase_operation(operation, fallback_value=None):
     """Safely execute Supabase operations with error handling"""
     try:
@@ -1540,6 +1565,9 @@ def activate_enhanced_subscription(chat_phone, payment_data, subscription_data):
         
         user_profile = response.data[0]
         profile_id = user_profile['id']
+
+        # 🆕 Parse M-Pesa transaction date safely
+        transaction_date = parse_mpesa_transaction_date(payment_data.get('transaction_date'))
         
         # Calculate next renewal date
         from datetime import datetime, timedelta
@@ -1559,7 +1587,7 @@ def activate_enhanced_subscription(chat_phone, payment_data, subscription_data):
             'mpesa_phone_number': payment_data.get('phone_number'),
             'chat_phone_number': chat_phone,
             'mpesa_amount': payment_data.get('amount'),
-            'mpesa_transaction_date': payment_data.get('transaction_date'),
+            'mpesa_transaction_date': transaction_date,
             
             # Enhanced Subscription Details
             'payment_duration_type': subscription_data['duration_type'],
@@ -1606,6 +1634,16 @@ def activate_enhanced_subscription(chat_phone, payment_data, subscription_data):
 def log_mpesa_transaction(profile_id, payment_data, subscription_data):
     """Log M-Pesa transaction details"""
     try:
+
+        # 🆕 ADD USER TRACKING
+        user_response = supabase.table('profiles').select('phone_number, business_name').eq('id', profile_id).execute()
+        user_info = user_response.data[0] if user_response.data else {}
+        
+        # 🆕 Parse transaction date
+        transaction_date = parse_mpesa_transaction_date(payment_data.get('transaction_date'))
+        
+        print(f"🔍 TRANSACTION: User {user_info.get('phone_number')} - Business: {user_info.get('business_name')} - Amount: {payment_data.get('amount')} - Receipt: {payment_data.get('mpesa_receipt')}")
+
         transaction_record = {
             'profile_id': profile_id,
             'checkout_request_id': payment_data.get('checkout_request_id'),
@@ -1622,7 +1660,7 @@ def log_mpesa_transaction(profile_id, payment_data, subscription_data):
         }
         
         supabase.table('mpesa_transactions').insert(transaction_record).execute()
-        print(f"✅ M-Pesa transaction logged for {profile_id}")
+        print(f"✅ TRANSACTION LOGGED: User {profile_id} - Receipt {payment_data.get('mpesa_receipt')} - Success")
         
     except Exception as e:
         print(f"❌ M-Pesa transaction logging error: {e}")
