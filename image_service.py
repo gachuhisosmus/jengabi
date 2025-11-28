@@ -78,9 +78,22 @@ class ImageService:
                 size = platform_sizes[platform]
                 transformations.append(f"c_{size['crop']},w_{size['width']},h_{size['height']}")
             
-            # Apply filters
-            if edits.get('filter'):
-                transformations.append(f"e_{edits['filter']}")
+            # Apply specialized background effects
+            filter_type = edits.get('filter', '')
+            if filter_type == 'background_removal':
+                # Simulate background removal with white background
+                transformations.extend(["e_improve", "e_auto_contrast", "b_white"])
+            elif filter_type == 'studio_background':
+                # Professional studio look
+                transformations.extend(["e_improve", "e_auto_brightness", "b_lightblue"])
+            elif filter_type == 'improve':
+                transformations.extend(["e_improve", "e_auto_contrast"])
+            elif filter_type == 'sepia':
+                transformations.append("e_sepia")
+            elif filter_type == 'vintage':
+                transformations.append("e_vintage")
+            elif filter_type == 'enhance':
+                transformations.extend(["e_improve", "e_auto_contrast", "e_auto_brightness"])
             
             # Enhance image quality
             transformations.extend(["q_auto", "f_auto"])

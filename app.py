@@ -3196,7 +3196,7 @@ Use /subscribe to unlock emergency business rescue!"""
 Use /subscribe to unlock all features!"""
 
 def handle_telegram_photo(phone_number, user_profile, file_id):
-    """Handle photo uploads from Telegram"""
+    """Handle photo uploads from Telegram - SHOW EDITING OPTIONS FIRST"""
     session = ensure_user_session(phone_number)
     
     try:
@@ -3213,7 +3213,7 @@ def handle_telegram_photo(phone_number, user_profile, file_id):
         image_response = requests.get(file_url)
         image_data = image_response.content
         
-        # Process image
+        # Process image - UPLOAD ONLY (no editing yet)
         image_service = ImageService()
         
         # Upload to Cloudinary
@@ -3225,47 +3225,146 @@ def handle_telegram_photo(phone_number, user_profile, file_id):
         
         print(f"✅ Image uploaded: {image_url}")
         
-        # Generate caption
-        business_context = f"{user_profile.get('business_name', 'Business')} - {user_profile.get('business_type', 'products')}"
-        ai_caption = image_service.generate_caption(image_url, business_context)
+        # Store image URL in session for editing
+        session['uploaded_image_url'] = image_url
+        session['awaiting_edit_selection'] = True
+        session['awaiting_image'] = False  # Clear the initial image state
         
-        # Apply basic optimizations
-        optimized_url = image_service.apply_basic_edit(image_url, {
-            'platform': 'instagram',
-            'filter': 'enhance'
-        })
+        return f"""🖼️ *IMAGE UPLOADED SUCCESSFULLY!* ✅
+
+📸 *Your Image is Ready for Editing*
+
+*Select how to edit your image:*
+
+1. 🎯 *Remove blurriness* - Enhance image clarity
+2. 🎨 *Classic tone* - Warm, vintage look  
+3. 🎞️ *Film picture look* - Retro film aesthetic
+4. 🖼️ *Clean background* - Remove entire background (white)
+5. 🌈 *Studio background* - Professional backdrop replacement
+6. ✨ *Auto-optimize + Captions* - AI enhancement + social media captions
+
+*Reply with 1, 2, 3, 4, 5, or 6:*
+
+💡 *Pro Tip:* Choose option 6 for complete social media-ready content!"""
         
-        # Deduct credit and log usage
-        update_user_credits(user_profile['id'], 'image_credits', 1)
-        log_feature_usage(user_profile['id'], 'image_processing', 1, 
-                         {'action': 'caption_generation', 'image_url': image_url}, 
-                         {'caption': ai_caption, 'optimized_url': optimized_url})
-        
-        # Clear session
+    except Exception as e:
+        print(f"❌ Image upload error: {e}")
         session['awaiting_image'] = False
+        return "❌ Error uploading image. Please try again with a clear, well-lit photo."
+
+def handle_edit_selection(phone_number, user_profile, selection):
+    """Handle user's editing option selection"""
+    session = ensure_user_session(phone_number)
+    image_url = session.get('uploaded_image_url')
+    
+    if not image_url:
+        return "❌ No image found. Please start over with /image command."
+    
+    try:
+        image_service = ImageService()
         
-        # Get updated credits
-        updated_credits = get_user_credits(user_profile['id'])
-        remaining_credits = updated_credits.get('image_credits', 0) if updated_credits else 0
+                # Define editing options
+        edit_options = {
+            '1': {'name': 'Remove blurriness', 'filter': 'improve', 'transformations': ['e_improve']},
+            '2': {'name': 'Classic tone', 'filter': 'sepia', 'transformations': ['e_sepia']},
+            '3': {'name': 'Film picture look', 'filter': 'vintage', 'transformations': ['e_vintage']}, 
+            '4': {'name': 'Clean background', 'filter': 'background', 'transformations': ['e_bgremoval', 'b_white']},
+            '5': {'name': 'Studio background', 'filter': 'studio', 'transformations': ['e_art:zorro', 'b_lightblue']},
+            '6': {'name': 'Auto-optimize + Captions', 'filter': 'auto', 'transformations': ['e_improve', 'e_auto_contrast']}
+        }
         
-        return f"""🖼️ *IMAGE PROCESSED SUCCESSFULLY!* ✅
+        if selection not in edit_options:
+            return "❌ Please choose a valid option (1, 2, 3, 4, or 5)"
+        
+        selected_edit = edit_options[selection]
+        print(f"🎨 Applying edit: {selected_edit['name']} for {user_profile['id']}")
+        
+                # Apply the selected edit
+        selected_option = edit_options[selection]
+        
+        if selection == '6':
+            # Full optimization + captions
+            optimized_url = image_service.apply_basic_edit(image_url, {
+                'platform': 'instagram',
+                'filter': 'enhance'
+            })
+            
+            # Generate caption
+            business_context = f"{user_profile.get('business_name', 'Business')} - {user_profile.get('business_type', 'products')}"
+            ai_caption = image_service.generate_caption(optimized_url, business_context)
+            
+            result_message = f"""🎨 *{selected_edit['name']} APPLIED!*
 
 📸 *Your Optimized Image:*
 {optimized_url}
 
 💬 *AI-Generated Captions:*
-{ai_caption}
+{ai_caption}"""
+        
+        elif selection == '4':
+            # Clean background (white background)
+            optimized_url = image_service.apply_basic_edit(image_url, {
+                'platform': 'instagram',
+                'filter': 'background_removal'
+            })
+            result_message = f"""🖼️ *{selected_edit['name']} APPLIED!*
+
+📸 *Your Image with Clean White Background:*
+{optimized_url}
+
+💡 *Perfect for professional product shots and e-commerce!*"""
+        
+        elif selection == '5':
+            # Studio background (professional backdrop)
+            optimized_url = image_service.apply_basic_edit(image_url, {
+                'platform': 'instagram',
+                'filter': 'studio_background'
+            })
+            result_message = f"""🏢 *{selected_edit['name']} APPLIED!*
+
+📸 *Your Image with Professional Studio Background:*
+{optimized_url}
+
+💡 *Looks like it was shot in a professional studio!*"""
+        
+        else:
+            # Basic filter application (options 1, 2, 3)
+            optimized_url = image_service.apply_basic_edit(image_url, {
+                'platform': 'instagram',
+                'filter': selected_edit['filter']
+            })
+            
+            result_message = f"""🎨 *{selected_edit['name']} APPLIED!*
+
+📸 *Your Edited Image:*
+{optimized_url}
+
+💡 *Ready for social media!*"""
+                   
+        # Deduct credit and log usage
+        update_user_credits(user_profile['id'], 'image_credits', 1)
+        log_feature_usage(user_profile['id'], 'image_processing', 1, 
+                         {'action': selected_edit['name'], 'original_url': image_url}, 
+                         {'edited_url': optimized_url})
+        
+        # Clear session
+        session['awaiting_edit_selection'] = False
+        session['uploaded_image_url'] = None
+        
+        # Get updated credits
+        updated_credits = get_user_credits(user_profile['id'])
+        remaining_credits = updated_credits.get('image_credits', 0) if updated_credits else 0
+        
+        return f"""{result_message}
 
 🔄 *Credits remaining:* {remaining_credits}
 
-🎯 *Ready to post!* Copy the caption and use the optimized image.
-
-💡 *Tip:* Use different captions for different platforms!"""
-
+🎯 *Copy the image URL and share on your social media!*"""
+        
     except Exception as e:
-        print(f"❌ Image processing error: {e}")
-        session['awaiting_image'] = False
-        return "❌ Error processing image. Please try again with a clear, well-lit photo of your product."
+        print(f"❌ Image editing error: {e}")
+        session['awaiting_edit_selection'] = False
+        return "❌ Error processing image edit. Please try again with /image command."   
 
 def handle_telegram_commands(phone_number, user_profile, command):
     print(f"🔍 TELEGRAM COMMAND DEBUG: Processing '{command}'")
@@ -3526,22 +3625,26 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
         else:
             return emergency_response
         
-        # 🖼️ Handle image uploads (Added 28/Nov/25)
+        # 🖼️ Handle image uploads and editing selections (Added 28/Nov/25)
     if session.get('awaiting_image'):
-        # This handles when user sends a photo
+        # User is expected to send a photo
         if 'photo' in data.get('message', {}):
             photo_sizes = data['message']['photo']
-            # Get the highest resolution photo
-            file_id = photo_sizes[-1]['file_id']
+            file_id = photo_sizes[-1]['file_id']  # Highest resolution
             
-            # Process the image
             image_response = handle_telegram_photo(phone_number, user_profile, file_id)
             resp.message(image_response)
             return str(resp)
         else:
-            # User sent text instead of photo
             session['awaiting_image'] = False
             return "Please send a photo or use /image to try again."
+    
+    # 🎨 NEW: Handle edit selection after image upload
+    if session.get('awaiting_edit_selection'):
+        selection = incoming_msg.strip()
+        edit_response = handle_edit_selection(phone_number, user_profile, selection)
+        resp.message(edit_response)
+        return str(resp)
     
     # 🚨 Handle QSTN question input
     if session.get('awaiting_qstn'):
