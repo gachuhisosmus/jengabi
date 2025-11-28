@@ -323,10 +323,8 @@ def get_user_credits(profile_id):
 def initialize_user_credits(profile_id):
     """Initialize credits for new users based on their plan"""
     try:
-        # Get user's current plan
         subscription = supabase.table('subscriptions').select('plan_type').eq('profile_id', profile_id).eq('is_active', True).execute()
         
-        # Default credits based on plan
         if subscription.data:
             plan_type = subscription.data[0].get('plan_type', 'basic')
             credits_map = {
@@ -336,16 +334,15 @@ def initialize_user_credits(profile_id):
             }
             credits = credits_map.get(plan_type, credits_map['basic'])
         else:
-            # Free trial credits
-            credits = {'image_credits': 1, 'enhancement_credits': 1, 'caption_credits': 5}
+            credits = {'image_credits': 0, 'enhancement_credits': 0, 'caption_credits': 0}  # No credits without subscription
         
-        # Insert credits record
-        supabase.table('user_credits').insert({
+        # ✅ ENHANCED: Use upsert to handle existing records
+        supabase.table('user_credits').upsert({
             'profile_id': profile_id,
             **credits
         }).execute()
         
-        print(f"✅ Credits initialized for {profile_id}: {credits}")
+        print(f"✅ Credits initialized/updated for {profile_id}: {credits}")
         return credits
     except Exception as e:
         print(f"Error initializing user credits: {e}")
@@ -356,21 +353,26 @@ def update_user_credits(profile_id, credit_type, amount_used=1):
     try:
         credits = get_user_credits(profile_id)
         if not credits:
+            print(f"❌ No credits record for {profile_id}")
             return False
             
         current_credits = credits.get(credit_type, 0)
         if current_credits >= amount_used:
-            # Update credits
+            # Update credits (don't go below 0)
+            new_credits = max(0, current_credits - amount_used)
             supabase.table('user_credits').update({
-                credit_type: current_credits - amount_used,
+                credit_type: new_credits,
                 'total_credits_used': credits.get('total_credits_used', 0) + amount_used,
                 'updated_at': datetime.now().isoformat()
             }).eq('profile_id', profile_id).execute()
+            
+            print(f"✅ Credits updated: {profile_id} - {credit_type}: {current_credits} → {new_credits}")
             return True
         else:
+            print(f"❌ Insufficient credits: {profile_id} - {credit_type}: {current_credits} available, {amount_used} needed")
             return False  # Insufficient credits
     except Exception as e:
-        print(f"Error updating user credits: {e}")
+        print(f"❌ Error updating user credits: {e}")
         return False
 
 def log_feature_usage(profile_id, feature_type, credits_used=1, input_data=None, output_data=None):
@@ -4505,6 +4507,45 @@ cleanup_thread.start()
 # Schedule subscription cleanup daily at 2 AM
 schedule.every().day.at("02:00").do(cleanup_expired_subscriptions)
 print("✅ Scheduled subscription expiration cleanup daily at 2 AM")
+
+def reset_monthly_credits():
+    """Reset image credits for all active subscribers on 1st of each month"""
+    try:
+        from datetime import datetime
+        
+        # Only run on 1st of month
+        if datetime.now().day != 1:
+            return
+            
+        print("🔄 Resetting monthly image credits...")
+        
+        # Get all active subscriptions
+        active_subs = supabase.table('subscriptions').select('profile_id, plan_type').eq('is_active', True).execute()
+        
+        for sub in active_subs.data:
+            profile_id = sub['profile_id']
+            plan_type = sub['plan_type']
+            
+            # Set credits based on plan
+            credits_map = {
+                'basic': {'image_credits': 3},
+                'growth': {'image_credits': 10},
+                'pro': {'image_credits': 999}
+            }
+            new_credits = credits_map.get(plan_type, credits_map['basic'])
+            
+            # Update credits
+            supabase.table('user_credits').update(new_credits).eq('profile_id', profile_id).execute()
+            print(f"✅ Reset credits for {profile_id}: {new_credits}")
+            
+        print(f"✅ Monthly credit reset completed for {len(active_subs.data)} users")
+            
+    except Exception as e:
+        print(f"❌ Monthly credit reset error: {e}")
+
+# Schedule monthly reset (runs daily but only resets on 1st)
+schedule.every().day.at("02:30").do(reset_monthly_credits)
+print("✅ Scheduled monthly credit reset daily at 2:30 AM (resets on 1st)")
 
 # Schedule weekly updates
 def schedule_weekly_updates():
