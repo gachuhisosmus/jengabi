@@ -1727,7 +1727,8 @@ ENHANCED_PLANS = {
         'description': '5 social media ideas per week + Business Q&A + Customer message analysis and experience improvement',
         'commands': ['ideas', '4wd', 'qstn'],
         'output_type': 'ideas',
-        'mpesa_code': 'BASIC'
+        'mpesa_code': 'BASIC',
+        'image_credits': 3
     },
     'growth': {
         'monthly_price': 249,
@@ -1735,7 +1736,8 @@ ENHANCED_PLANS = {
         'description': '15 ideas + Marketing strategies + Business Q&A + Customer message analysis and exeperience improvement',
         'commands': ['ideas', 'strat', '4wd', 'qstn'],
         'output_type': 'ideas_strategy',
-        'mpesa_code': 'GROWTH'
+        'mpesa_code': 'GROWTH',
+        'image_credits': 10
     },
     #'pro': {
        # 'monthly_price': 599,
@@ -1743,7 +1745,8 @@ ENHANCED_PLANS = {
         #'description': 'Unlimited ideas + Full strategies + Real-time trends + Competitor insights + Business Q&A + Customer message analysis and experience improvement',
         #'commands': ['ideas', 'strat', 'trends', 'competitor', '4wd', 'qstn'],
         #'output_type': 'strategies',
-        #'mpesa_code': 'PRO'
+        #'mpesa_code': 'PRO',
+        #'image_credits': 999
     #}
 }
 
@@ -3002,6 +3005,52 @@ def generate_emergency_sales_solution(phone_number, user_profile, emergency_desc
     except Exception as e:
         print(f"Emergency sales error: {e}")
         return "🚨 I'm analyzing your emergency now. Please try again in 30 seconds or describe your problem more specifically."
+    
+def handle_image_command(phone_number, user_profile):
+    """Handle image processing command"""
+    session = ensure_user_session(phone_number)
+    
+    # Check subscription
+    if not check_subscription(user_profile['id']):
+        return "🔒 Image processing requires a subscription. Use /subscribe to unlock!"
+    
+    # Check image credits
+    credits = get_user_credits(user_profile['id'])
+    available_credits = credits.get('image_credits', 0) if credits else 0
+    
+    if available_credits <= 0:
+        plan_info = get_user_plan_info(user_profile['id'])
+        plan_type = plan_info.get('plan_type', 'basic') if plan_info else 'basic'
+        plan_credits = ENHANCED_PLANS.get(plan_type, ENHANCED_PLANS['basic'])['image_credits']
+        
+        return f"""🖼️ *IMAGE PROCESSING*
+
+You're out of image credits! 😔
+
+*Your Plan:* {plan_type.upper()} ({plan_credits} edits/month)
+*Credits Used:* {plan_credits}/{plan_credits}
+
+💡 Options:
+• Reply 'subscribe' to upgrade your plan
+• Use PAYG: KSh 50 per image edit (coming soon)
+
+Need more edits? Upgrade your plan!"""
+
+    session['awaiting_image'] = True
+    session['image_action'] = 'process'
+    
+    return f"""🖼️ *IMAGE PROCESSING*
+
+Send me a product photo and I'll:
+• Generate engaging captions 📝
+• Optimize for social media 📱  
+• Suggest marketing angles 🎯
+
+*Credits Available:* {available_credits} edits
+
+📸 *Take or upload a clear photo of your product*
+
+Ready when you are!"""
 
 def get_telegram_status(user_profile):
     """Get Telegram-friendly status message with correct plan limits"""
@@ -3144,6 +3193,78 @@ Use /subscribe to unlock emergency business rescue!"""
 
 Use /subscribe to unlock all features!"""
 
+def handle_telegram_photo(phone_number, user_profile, file_id):
+    """Handle photo uploads from Telegram"""
+    session = ensure_user_session(phone_number)
+    
+    try:
+        print(f"🖼️ Processing image upload for {user_profile['id']}")
+        
+        # Get file URL from Telegram
+        file_response = requests.get(f"{TELEGRAM_API_URL}/getFile", params={'file_id': file_id})
+        file_path = file_response.json()['result']['file_path']
+        file_url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}"
+        
+        print(f"📥 Downloading image from: {file_url}")
+        
+        # Download image
+        image_response = requests.get(file_url)
+        image_data = image_response.content
+        
+        # Process image
+        image_service = ImageService()
+        
+        # Upload to Cloudinary
+        image_url = image_service.upload_image(image_data, user_profile['id'])
+        
+        if not image_url:
+            session['awaiting_image'] = False
+            return "❌ Failed to upload image. Please try again with a clearer photo."
+        
+        print(f"✅ Image uploaded: {image_url}")
+        
+        # Generate caption
+        business_context = f"{user_profile.get('business_name', 'Business')} - {user_profile.get('business_type', 'products')}"
+        ai_caption = image_service.generate_caption(image_url, business_context)
+        
+        # Apply basic optimizations
+        optimized_url = image_service.apply_basic_edit(image_url, {
+            'platform': 'instagram',
+            'filter': 'enhance'
+        })
+        
+        # Deduct credit and log usage
+        update_user_credits(user_profile['id'], 'image_credits', 1)
+        log_feature_usage(user_profile['id'], 'image_processing', 1, 
+                         {'action': 'caption_generation', 'image_url': image_url}, 
+                         {'caption': ai_caption, 'optimized_url': optimized_url})
+        
+        # Clear session
+        session['awaiting_image'] = False
+        
+        # Get updated credits
+        updated_credits = get_user_credits(user_profile['id'])
+        remaining_credits = updated_credits.get('image_credits', 0) if updated_credits else 0
+        
+        return f"""🖼️ *IMAGE PROCESSED SUCCESSFULLY!* ✅
+
+📸 *Your Optimized Image:*
+{optimized_url}
+
+💬 *AI-Generated Captions:*
+{ai_caption}
+
+🔄 *Credits remaining:* {remaining_credits}
+
+🎯 *Ready to post!* Copy the caption and use the optimized image.
+
+💡 *Tip:* Use different captions for different platforms!"""
+
+    except Exception as e:
+        print(f"❌ Image processing error: {e}")
+        session['awaiting_image'] = False
+        return "❌ Error processing image. Please try again with a clear, well-lit photo of your product."
+
 def handle_telegram_commands(phone_number, user_profile, command):
     print(f"🔍 TELEGRAM COMMAND DEBUG: Processing '{command}'")
     
@@ -3200,6 +3321,9 @@ Ready to grow your business? 🚀"""
     elif command == 'sales':
         print("🚨 TELEGRAM SALES COMMAND: Handling sales command")
         return handle_sales_command(phone_number, user_profile)
+    
+    elif command == 'image':
+        return handle_image_command(phone_number, user_profile)
     
     else:
         return "Unknown command. Use /help to see available commands."
@@ -3369,7 +3493,7 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
         current_step = mpesa_flow.get('step', 'plan_selection')
         print(f"🔍 MPESA FLOW PROCESSING: step='{current_step}', msg='{incoming_msg}'")
         
-        # 🆕 ADD MISSING PLAN SELECTION HANDLER
+        # 🆕 PLAN SELECTION HANDLER
         if current_step == 'plan_selection':
             print(f"🔍 PROCESSING PLAN SELECTION: '{incoming_msg}'")
             response = handle_subscription_plan_selection(phone_number, incoming_msg, session)
@@ -3399,6 +3523,23 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
             return first_part
         else:
             return emergency_response
+        
+        # 🖼️ Handle image uploads (Added 28/Nov/25)
+    if session.get('awaiting_image'):
+        # This handles when user sends a photo
+        if 'photo' in data.get('message', {}):
+            photo_sizes = data['message']['photo']
+            # Get the highest resolution photo
+            file_id = photo_sizes[-1]['file_id']
+            
+            # Process the image
+            image_response = handle_telegram_photo(phone_number, user_profile, file_id)
+            resp.message(image_response)
+            return str(resp)
+        else:
+            # User sent text instead of photo
+            session['awaiting_image'] = False
+            return "Please send a photo or use /image to try again."
     
     # 🚨 Handle QSTN question input
     if session.get('awaiting_qstn'):
