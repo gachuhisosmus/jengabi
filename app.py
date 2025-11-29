@@ -19,6 +19,7 @@ import base64
 from datetime import datetime, timedelta
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from image_service import ImageService
 
 # ===== SAFE DATABASE OPERATIONS =====
 
@@ -3633,8 +3634,7 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg, tel
             file_id = photo_sizes[-1]['file_id']  # Highest resolution
             
             image_response = handle_telegram_photo(phone_number, user_profile, file_id)
-            resp.message(image_response)
-            return str(resp)
+            return image_response
         else:
             session['awaiting_image'] = False
             return "Please send a photo or use /image to try again."
