@@ -2728,7 +2728,7 @@ def telegram_webhook():
             print(f"📱 Telegram Message: chat_id={chat_id}, text='{text}'")
             
             # Process using your existing logic
-            response_text = process_telegram_message(chat_id, text)
+            response_text = process_telegram_message(chat_id, text, data)
             
             # Send response back
             send_telegram_message(chat_id, response_text)
@@ -2797,7 +2797,7 @@ def send_telegram_message(chat_id, text):
     except Exception as e:
         print(f"❌ Telegram send error: {e}")
 
-def process_telegram_message(chat_id, incoming_msg):
+def process_telegram_message(chat_id, incoming_msg, telegram_data=None):
     """Process message using EXACT SAME logic as WhatsApp webhook - FIXED VERSION"""
     phone_number = f"telegram:{chat_id}"
     user_profile = get_or_create_profile(phone_number)
@@ -2887,7 +2887,7 @@ def process_telegram_message(chat_id, incoming_msg):
         return handle_telegram_commands(phone_number, user_profile, clean_msg)
     
     # ✅ Handle session states for regular messages
-    response = handle_telegram_session_states(phone_number, user_profile, incoming_msg)
+    response = handle_telegram_session_states(phone_number, user_profile, incoming_msg, telegram_data)
     
     # ✅ CRITICAL: Ensure we always return a valid response
     if not response or len(response.strip()) == 0:
@@ -3628,8 +3628,8 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
         # 🖼️ Handle image uploads and editing selections (Added 28/Nov/25)
     if session.get('awaiting_image'):
         # User is expected to send a photo
-        if 'photo' in data.get('message', {}):
-            photo_sizes = data['message']['photo']
+        if telegram_data and 'photo' in telegram_data.get('message', {}):
+            photo_sizes = telegram_data['message']['photo']
             file_id = photo_sizes[-1]['file_id']  # Highest resolution
             
             image_response = handle_telegram_photo(phone_number, user_profile, file_id)
