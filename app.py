@@ -3556,7 +3556,7 @@ Choose your plan:
 
 Reply with *1*, or *2*,:"""
 
-def handle_telegram_session_states(phone_number, user_profile, incoming_msg):
+def handle_telegram_session_states(phone_number, user_profile, incoming_msg, telegram_data=None):
     """Handle Telegram session states for regular messages - WITH SUBSCRIPTION FLOW FIX"""
     session = ensure_user_session(phone_number)
     
@@ -4556,7 +4556,7 @@ def check_and_clear_stale_sessions():
 def cleanup_expired_subscriptions():
     """Clean up all expired subscriptions - run periodically"""
     try:
-        from datetime import datetime
+        from datetime import datetime, timezone
         
         # Find all active subscriptions that have expired
         response = supabase.table('subscriptions').select('*').eq('is_active', True).execute()
