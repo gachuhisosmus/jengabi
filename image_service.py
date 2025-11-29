@@ -100,14 +100,21 @@ class ImageService:
             
             # Generate transformed URL
             if transformations:
-                # Cloudinary transformation format
-                base_url = '/'.join(image_url.split('/')[:-2])  # Get base URL
-                public_id = image_url.split('/')[-1].split('.')[0]  # Get public ID
+                # Extract the base URL and public ID correctly
+                # Original URL: https://res.cloudinary.com/.../upload/v1764413671/jengabi/users/.../upload_20251129_105430.jpg
+                parts = image_url.split('/upload/')
+                if len(parts) == 2:
+                   base_url = parts[0] + '/upload'
+                   public_id_with_version = parts[1]
                 
-                transformation_str = '/'.join(transformations)
-                transformed_url = f"{base_url}/{transformation_str}/{public_id}.jpg"
-                return transformed_url
-            
+                   # Apply transformations
+                   transformation_str = '/'.join(transformations)
+                   transformed_url = f"{base_url}/{transformation_str}/{public_id_with_version}"
+                   print(f"✅ Generated transformed URL: {transformed_url}")
+                   return transformed_url
+        
+            # Fallback to original URL if transformation fails
+            print(f"⚠️ Using original URL (no transformations applied): {image_url}")
             return image_url
             
         except Exception as e:
