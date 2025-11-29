@@ -3643,8 +3643,8 @@ def handle_telegram_session_states(phone_number, user_profile, incoming_msg, tel
     if session.get('awaiting_edit_selection'):
         selection = incoming_msg.strip()
         edit_response = handle_edit_selection(phone_number, user_profile, selection)
-        resp.message(edit_response)
-        return str(resp)
+        return edit_response
+        
     
     # 🚨 Handle QSTN question input
     if session.get('awaiting_qstn'):
