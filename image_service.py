@@ -109,14 +109,14 @@ class ImageService:
                 
                    # Apply transformations
                    transformation_str = '/'.join(transformations)
-                   transformed_url = f"{base_url}/{transformation_str}/{public_id_with_version}"
+                   transformed_url = f"{base_url}/{transformation_str}/{version_and_path}"
+                   
                    print(f"✅ Generated transformed URL: {transformed_url}")
                    return transformed_url
-        
-            # Fallback to original URL if transformation fails
-            print(f"⚠️ Using original URL (no transformations applied): {image_url}")
-            return image_url
-            
+                else:
+                    print(f"⚠️ Could not parse Cloudinary URL: {image_url}")
+                    return image_url
+                  
         except Exception as e:
             print(f"❌ Image editing error: {e}")
             return image_url  # Return original if editing fails
