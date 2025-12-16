@@ -2976,7 +2976,7 @@ def generate_emergency_sales_solution(phone_number, user_profile, emergency_desc
         """
         
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": f"You are an emergency business rescue expert for African SMEs. Provide immediate, actionable cash generation strategies SPECIFIC to {products_text}. Use their actual products in all recommendations with specific numbers, ready-to-use templates, and urgent execution steps."},
                 {"role": "user", "content": prompt}
@@ -3243,16 +3243,17 @@ def handle_telegram_photo(phone_number, user_profile, file_id):
 4. 🖼️ *Clean background* - Remove entire background (white)
 5. 🌈 *Studio background* - Professional backdrop replacement
 6. ✨ *Auto-optimize + Captions* - AI enhancement + social media captions
+7. 🎨 *CUSTOM BACKGROUND* - Upload your own background 💎
 
-*Reply with 1, 2, 3, 4, 5, or 6:*
+*Reply with 1, 2, 3, 4, 5, 6 or 7:*
 
-💡 *Pro Tip:* Choose option 6 for complete social media-ready content!"""
+💡 *Pro Tip:* Choose option 7 for professional custom backgrounds!"""
         
     except Exception as e:
         print(f"❌ Image upload error: {e}")
         session['awaiting_image'] = False
         return "❌ Error uploading image. Please try again with a clear, well-lit photo."
-
+ 
 def handle_edit_selection(phone_number, user_profile, selection):
     """Handle user's editing option selection"""
     session = ensure_user_session(phone_number)
@@ -3271,18 +3272,19 @@ def handle_edit_selection(phone_number, user_profile, selection):
             '3': {'name': 'Film picture look', 'filter': 'vintage', 'transformations': ['e_vintage']}, 
             '4': {'name': 'Clean background', 'filter': 'background', 'transformations': ['e_bgremoval', 'b_white']},
             '5': {'name': 'Studio background', 'filter': 'studio', 'transformations': ['e_art:zorro', 'b_lightblue']},
-            '6': {'name': 'Auto-optimize + Captions', 'filter': 'auto', 'transformations': ['e_improve', 'e_auto_contrast']}
+            '6': {'name': 'Auto-optimize + Captions', 'filter': 'auto', 'transformations': ['e_improve', 'e_auto_contrast']},
+            '7': {'name': '🎨 CUSTOM BACKGROUND (Premium)', 'filter': 'custom_bg', 'transformations': [], 'price': 150}  
         }
         
         if selection not in edit_options:
-            return "❌ Please choose a valid option (1, 2, 3, 4, or 5)"
+            return "❌ Please choose a valid option (1, 2, 3, 4, 5, 6, or 7)"
         
         selected_edit = edit_options[selection]
         print(f"🎨 Applying edit: {selected_edit['name']} for {user_profile['id']}")
         
                 # Apply the selected edit
         selected_option = edit_options[selection]
-        
+       
         if selection == '6':
             # Full optimization + captions
             optimized_url = image_service.apply_basic_edit(image_url, {
@@ -4085,6 +4087,55 @@ Reply *'PAY'* to initiate M-Pesa payment or *'CANCEL'* to abort."""
     
     return f"I'm here to help your*{business_context}* business with *marketing* and *Business Analysis*! Use /ideas for content, /sales to get quick sales solutions, /strat for strategies, /qstn for advice, /4wd for customer analysis, /image for picture editing, or /help for more options."
 
+# ADD THIS NEW FUNCTION AFTER handle_edit_selection function:
+
+def handle_custom_background_flow(phone_number, user_profile, product_image_url, background_image_url):
+    """Handle custom background replacement - premium feature"""
+    try:
+        # For now, use basic Cloudinary overlay (advanced AI can be added later)
+        from image_service import ImageService
+        image_service = ImageService()
+        
+        # Simple overlay approach
+        composite_url = image_service.apply_custom_background(product_image_url, background_image_url)
+        
+        # Charge premium price
+        charge_payg_fee(user_profile['id'], 150)
+        
+        return f"""🎨 *CUSTOM BACKGROUND APPLIED!* 💎
+
+📸 *Your Professional Composite:*
+{composite_url}
+
+✨ *Premium Feature Used:* Custom Background Replacement
+💰 *Charged:* KSh 150 (PAYG)
+
+🎯 *Your product now has a completely custom professional background!*
+Perfect for social media and marketing materials."""
+        
+    except Exception as e:
+        print(f"Custom background error: {e}")
+        return "❌ Error applying custom background. Please try again or contact support."
+    
+def charge_payg_fee(profile_id, amount):
+    """Charge user for premium PAYG features"""
+    try:
+        # For now, just log the charge - integrate M-Pesa later
+        print(f"💳 PAYG CHARGE: User {profile_id} charged KSh {amount}")
+        
+        # Log transaction for billing
+        supabase.table('payg_transactions').insert({
+            'profile_id': profile_id,
+            'amount': amount,
+            'feature': 'custom_background',
+            'created_at': datetime.now().isoformat()
+        }).execute()
+        
+        return True
+    except Exception as e:
+        print(f"PAYG charge error: {e}")
+        return False
+
 @app.route('/debug-telegram', methods=['GET'])
 def debug_telegram():
     """Debug endpoint to check Telegram setup"""
@@ -4478,7 +4529,7 @@ def generate_trend_analysis(user_profile):
         """
         
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a market intelligence expert specializing in African small business trends. Provide actionable, specific recommendations based on real-time data."},
                 {"role": "user", "content": prompt}
@@ -5203,7 +5254,7 @@ def generate_realistic_ideas(user_profile, products, output_type='ideas', num_id
             temperature = 0.9
         
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": get_system_prompt(output_type)},
                 {"role": "user", "content": prompt}
@@ -5401,7 +5452,7 @@ def handle_qstn_command(phone_number, user_profile, question):
         """
         
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a practical, no-nonsense business advisor for African SMEs. Answer directly and specifically. Never use generic template responses."},
                 {"role": "user", "content": prompt}
@@ -5481,7 +5532,7 @@ def handle_4wd_command(phone_number, user_profile, customer_message):
         """
         
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a customer experience expert for Kenyan small businesses. Analyze customer messages and provide practical, actionable, and applicable insights."},
                 {"role": "user", "content": prompt}
