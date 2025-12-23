@@ -21,6 +21,16 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from image_service import ImageService
 
+try:
+    from apify_integration import apify_client
+    from telegram_enhanced import telegram_enhanced
+    APIFY_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Apify integration not available: {e}")
+    APIFY_AVAILABLE = False
+    apify_client = None
+    telegram_enhanced = None
+
 # ===== SAFE DATABASE OPERATIONS =====
 
 # ===== SAFE DATABASE OPERATIONS =====
@@ -3429,6 +3439,22 @@ Ready to grow your business? 🚀"""
     elif command == 'image':
         return handle_image_command(phone_number, user_profile)
     
+    elif command == 'trends':
+        # REPLACE existing trends handler
+        if APIFY_AVAILABLE and telegram_enhanced:
+            return telegram_enhanced.handle_enhanced_trends(phone_number, user_profile)
+        else:
+            return handle_trends_command(phone_number, user_profile)
+    
+    elif command == 'competitor':
+        # REPLACE existing competitor handler
+        if APIFY_AVAILABLE and telegram_enhanced:
+            return telegram_enhanced.handle_enhanced_competitor(phone_number, user_profile)
+        else:
+            return handle_competitor_command(phone_number, user_profile)
+    
+    # ... rest of the function ...
+    
     else:
         return "Unknown command. Use /help to see available commands."
 
@@ -5570,7 +5596,13 @@ def handle_trends_command(phone_number, user_profile):
     
     plan_info = get_user_plan_info(user_profile['id'])
     if not plan_info or plan_info.get('plan_type') != 'pro':
-        return "🔒 Real-time trends are exclusive to Pro plan users. Reply 'subscribe' to upgrade!"
+
+        if plan_info.get('plan_type') not in ['growth', 'pro']:
+           return "🔒 Real-time trends are available in Growth and Pro plan users. Reply 'subscribe' to upgrade!"
+        
+    # If Apify is available, use enhanced version
+    if APIFY_AVAILABLE and telegram_enhanced:
+        return telegram_enhanced.handle_enhanced_trends(phone_number, user_profile)
     
     # ANONYMIZE for trends analysis
     safe_profile, _ = anonymize_for_command('trends', user_profile)
@@ -5594,6 +5626,10 @@ def handle_competitor_command(phone_number, user_profile):
     plan_info = get_user_plan_info(user_profile['id'])
     if not plan_info or plan_info.get('plan_type') != 'pro':
         return "🔒 Competitor analysis is exclusive to Pro plan users. Reply 'subscribe' to upgrade!"
+    
+    # If Apify is available, use enhanced version
+    if APIFY_AVAILABLE and telegram_enhanced:
+        return telegram_enhanced.handle_enhanced_competitor(phone_number, user_profile)
     
     # ANONYMIZE for competitor analysis
     safe_profile, _ = anonymize_for_command('competitor', user_profile)
